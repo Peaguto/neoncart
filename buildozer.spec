@@ -6,7 +6,7 @@ package.domain = br.com.neoncart
 
 source.dir = .
 source.include_exts = py,kv,png,ttf,json,wav
-source.exclude_dirs = tests, bin, .buildozer, .venv, .git, __pycache__
+source.exclude_dirs = tests, bin, .buildozer, .venv, .git, .github, __pycache__
 source.exclude_patterns = README.md, requirements-dev.txt
 
 version = 2.0.0
