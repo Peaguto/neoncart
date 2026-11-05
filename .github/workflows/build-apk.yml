@@ -18,7 +18,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libzbar0
-          pip install openpyxl pyzbar pillow pytest python-barcode
+          pip install kivy==2.3.1 openpyxl pyzbar pillow pytest python-barcode
       - name: Testes
         run: python -m pytest -q tests
 
