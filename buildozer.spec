@@ -30,6 +30,10 @@ android.archs = arm64-v8a, armeabi-v7a
 android.accept_sdk_license = True
 android.allow_backup = True
 
+# Versão estável do python-for-android (Python 3.11). O master usa Python 3.14
+# e quebra a instalação das dependências do Kivy via pip.
+p4a.branch = v2024.01.21
+
 
 [buildozer]
 log_level = 2
