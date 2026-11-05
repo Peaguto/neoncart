@@ -43,7 +43,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y git zip unzip autoconf libtool pkg-config \
             zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake \
-            libffi-dev libssl-dev automake build-essential ccache
+            libffi-dev libssl-dev automake build-essential ccache \
+            gettext autopoint
 
       - name: Instalar Buildozer
         run: pip install buildozer==1.5.0 "cython<3.0"
