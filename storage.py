@@ -1,13 +1,45 @@
-"""Persistência e regras de negócio dos registros de carrinhos.
+"""Persistência e regras de negócio do Neon Cart.
 
 Módulo sem dependência de Kivy, para poder ser testado no desktop.
+
+Arquivo único (JSON, versão 2) com:
+- entries:   lista ativa de carrinhos (mais recentes primeiro)
+- history:   histórico de scans/ações (mais recentes primeiro)
+- sessions:  listas salvas
+- divisions: setores usados recentemente
+- settings:  preferências
 """
 
 import json
 import os
 import tempfile
 import uuid
+from collections import Counter
 from datetime import datetime, timezone
+
+DATA_VERSION = 2
+
+# Ações do histórico
+ADD = "ADD"
+DUPLICATE = "DUPLICATE"
+EDIT = "EDIT"
+DELETE = "DELETE"
+SCAN = "SCAN"
+ACTIONS = (ADD, DUPLICATE, EDIT, DELETE, SCAN)
+
+ACTION_LABELS = {
+    ADD: "REGISTRADO",
+    DUPLICATE: "DUPLICADO",
+    EDIT: "EDITADO",
+    DELETE: "EXCLUÍDO",
+    SCAN: "LIDO",
+}
+
+DEFAULT_SETTINGS = {
+    "continuous": False,  # câmera cadastra direto e continua aberta
+    "vibrate": True,
+    "sound": True,
+}
 
 
 class DuplicateCodeError(ValueError):
@@ -16,6 +48,10 @@ class DuplicateCodeError(ValueError):
     def __init__(self, code):
         super().__init__(code)
         self.code = code
+
+
+class BackupError(ValueError):
+    """Arquivo de backup inválido."""
 
 
 def normalize_code(value):
@@ -30,59 +66,228 @@ def normalize_observation(value):
     return (value or "").strip()
 
 
-class EntryStore:
-    """Lista de registros salva em JSON, mais recentes primeiro."""
+def now_iso():
+    return datetime.now(timezone.utc).isoformat()
 
-    def __init__(self, path):
+
+def parse_ts(value):
+    """Converte timestamp ISO (UTC) para datetime local."""
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return datetime.now().astimezone()
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone()
+
+
+def local_datetime(item):
+    """Horário local do campo "timestamp" (registro ou histórico)."""
+    if not isinstance(item, dict):
+        return datetime.now().astimezone()
+    return parse_ts(item.get("timestamp"))
+
+
+def _valid_entry(e):
+    return isinstance(e, dict) and isinstance(e.get("id"), str) and isinstance(e.get("code"), str)
+
+
+def _clean_entry(e):
+    return {
+        "id": e["id"],
+        "code": normalize_code(e["code"]),
+        "division": normalize_division(e.get("division")),
+        "observation": normalize_observation(e.get("observation")),
+        "timestamp": e.get("timestamp") or now_iso(),
+    }
+
+
+def _clean_entries(items):
+    return [_clean_entry(e) for e in items or [] if _valid_entry(e)]
+
+
+def _clean_history(items):
+    out = []
+    for h in items or []:
+        if isinstance(h, dict) and h.get("action") in ACTIONS and isinstance(h.get("code"), str):
+            out.append({
+                "id": h.get("id") or str(uuid.uuid4()),
+                "action": h["action"],
+                "code": h["code"],
+                "division": h.get("division") or "",
+                "source": h.get("source") or "manual",
+                "timestamp": h.get("timestamp") or now_iso(),
+            })
+    return out
+
+
+def _clean_sessions(items):
+    out = []
+    for s in items or []:
+        if isinstance(s, dict) and isinstance(s.get("id"), str):
+            out.append({
+                "id": s["id"],
+                "name": str(s.get("name") or "Lista"),
+                "created": s.get("created") or now_iso(),
+                "entries": _clean_entries(s.get("entries")),
+            })
+    return out
+
+
+class Database:
+    """Todos os dados do app em um arquivo JSON."""
+
+    MAX_HISTORY = 5000
+    MAX_DIVISIONS = 8
+
+    def __init__(self, path, legacy_path=None):
         self.path = path
-        self.entries = self._load()
+        self.entries = []
+        self.history = []
+        self.sessions = []
+        self.divisions = []
+        self.settings = dict(DEFAULT_SETTINGS)
+        if os.path.exists(path):
+            self._load()
+        elif legacy_path and os.path.exists(legacy_path):
+            self._migrate_v1(legacy_path)
 
     # --- arquivo -------------------------------------------------------
     def _load(self):
         try:
             with open(self.path, "r", encoding="utf-8") as fh:
                 data = json.load(fh)
-        except (FileNotFoundError, json.JSONDecodeError):
-            return []
-        return [e for e in data if isinstance(e, dict) and "id" in e and "code" in e]
+        except (OSError, json.JSONDecodeError):
+            return
+        if isinstance(data, list):  # formato antigo (só a lista)
+            data = {"entries": data}
+        if isinstance(data, dict):
+            self._apply(data)
+
+    def _apply(self, data):
+        self.entries = _clean_entries(data.get("entries"))
+        self.history = _clean_history(data.get("history"))[: self.MAX_HISTORY]
+        self.sessions = _clean_sessions(data.get("sessions"))
+        self.divisions = [normalize_division(d) for d in data.get("divisions") or []
+                          if isinstance(d, str) and d.strip()][: self.MAX_DIVISIONS]
+        settings = dict(DEFAULT_SETTINGS)
+        for key, value in (data.get("settings") or {}).items():
+            if key in DEFAULT_SETTINGS and isinstance(value, bool):
+                settings[key] = value
+        self.settings = settings
+
+    def _migrate_v1(self, legacy_path):
+        try:
+            with open(legacy_path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+        except (OSError, json.JSONDecodeError):
+            return
+        if isinstance(data, list):
+            self.entries = _clean_entries(data)
+            self.save()
+
+    def to_dict(self):
+        return {
+            "version": DATA_VERSION,
+            "entries": self.entries,
+            "history": self.history,
+            "sessions": self.sessions,
+            "divisions": self.divisions,
+            "settings": self.settings,
+        }
 
     def save(self):
         directory = os.path.dirname(self.path) or "."
         os.makedirs(directory, exist_ok=True)
         # Grava em arquivo temporário e renomeia para não corromper os dados.
-        fd, tmp = tempfile.mkstemp(dir=directory, prefix=".entries-", suffix=".json")
+        fd, tmp = tempfile.mkstemp(dir=directory, prefix=".neoncart-", suffix=".json")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                json.dump(self.entries, fh, ensure_ascii=False, indent=1)
+                json.dump(self.to_dict(), fh, ensure_ascii=False)
             os.replace(tmp, self.path)
         except BaseException:
             if os.path.exists(tmp):
                 os.remove(tmp)
             raise
 
-    # --- operações -----------------------------------------------------
+    # --- histórico -----------------------------------------------------
+    def _log(self, action, code, division="", source="manual"):
+        self.history.insert(0, {
+            "id": str(uuid.uuid4()),
+            "action": action,
+            "code": code,
+            "division": division,
+            "source": source,
+            "timestamp": now_iso(),
+        })
+        del self.history[self.MAX_HISTORY:]
+
+    def log_scan(self, code, source="camera"):
+        """Registra uma leitura da câmera (antes de cadastrar)."""
+        code = normalize_code(code)
+        if code:
+            self._log(SCAN, code, source=source)
+            self.save()
+
+    def filter_history(self, query="", action=None):
+        q = (query or "").upper()
+        return [
+            h for h in self.history
+            if (action is None or h["action"] == action)
+            and (not q or q in h["code"].upper() or q in h["division"].upper())
+        ]
+
+    def clear_history(self):
+        self.history = []
+        self.save()
+
+    # --- lista ativa ---------------------------------------------------
     def get(self, entry_id):
         return next((e for e in self.entries if e["id"] == entry_id), None)
 
     def has_code(self, code, exclude_id=None):
         return any(e["code"] == code and e["id"] != exclude_id for e in self.entries)
 
-    def add(self, code, division, observation=""):
+    def find_code(self, code):
+        """Onde o código aparece: [("Lista atual", entry) | (nome_da_lista, entry)]."""
+        code = normalize_code(code)
+        found = [("Lista atual", e) for e in self.entries if e["code"] == code]
+        for s in self.sessions:
+            found += [(s["name"], e) for e in s["entries"] if e["code"] == code]
+        return found
+
+    def _remember_division(self, division):
+        if division in self.divisions:
+            self.divisions.remove(division)
+        self.divisions.insert(0, division)
+        del self.divisions[self.MAX_DIVISIONS:]
+
+    def forget_division(self, division):
+        division = normalize_division(division)
+        if division in self.divisions:
+            self.divisions.remove(division)
+            self.save()
+
+    def add(self, code, division, observation="", source="manual"):
         """Adiciona um registro. Retorna None se faltar código ou divisória."""
         code = normalize_code(code)
         division = normalize_division(division)
         if not code or not division:
             return None
         if self.has_code(code):
+            self._log(DUPLICATE, code, division, source)
+            self.save()
             raise DuplicateCodeError(code)
         entry = {
             "id": str(uuid.uuid4()),
             "code": code,
             "division": division,
             "observation": normalize_observation(observation),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": now_iso(),
         }
         self.entries.insert(0, entry)
+        self._remember_division(division)
+        self._log(ADD, code, division, source)
         self.save()
         return entry
 
@@ -98,18 +303,43 @@ class EntryStore:
             raise DuplicateCodeError(code)
         entry.update(code=code, division=division,
                      observation=normalize_observation(observation))
+        self._remember_division(division)
+        self._log(EDIT, code, division)
         self.save()
         return entry
 
     def remove(self, entry_id):
-        before = len(self.entries)
-        self.entries = [e for e in self.entries if e["id"] != entry_id]
-        if len(self.entries) != before:
-            self.save()
+        """Remove e retorna (entry, posição) para permitir desfazer."""
+        for idx, e in enumerate(self.entries):
+            if e["id"] == entry_id:
+                del self.entries[idx]
+                self._log(DELETE, e["code"], e["division"])
+                self.save()
+                return e, idx
+        return None, -1
+
+    def restore(self, entry, index=0):
+        """Desfaz uma exclusão. Falha se o código foi registrado de novo."""
+        if self.has_code(entry["code"]) or self.get(entry["id"]):
+            return False
+        self.entries.insert(max(0, min(index, len(self.entries))), entry)
+        self._log(ADD, entry["code"], entry["division"], "desfazer")
+        self.save()
+        return True
 
     def clear(self):
+        """Apaga a lista ativa e retorna os registros (para desfazer)."""
+        removed = self.entries
         self.entries = []
         self.save()
+        return removed
+
+    def restore_all(self, entries):
+        if self.entries:
+            return False
+        self.entries = list(entries)
+        self.save()
+        return True
 
     def filter(self, query):
         q = (query or "").upper()
@@ -122,13 +352,126 @@ class EntryStore:
             or q in (e.get("observation") or "").upper()
         ]
 
+    # --- listas salvas -------------------------------------------------
+    def get_session(self, session_id):
+        return next((s for s in self.sessions if s["id"] == session_id), None)
 
-def local_datetime(entry):
-    """Converte o timestamp ISO (UTC) do registro para o horário local."""
-    try:
-        dt = datetime.fromisoformat(entry["timestamp"].replace("Z", "+00:00"))
-    except (KeyError, ValueError, AttributeError):
-        return datetime.now()
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone()
+    @staticmethod
+    def default_session_name(now=None):
+        now = now or datetime.now()
+        return "Lista {}".format(now.strftime("%d/%m/%Y %H:%M"))
+
+    def save_session(self, name=""):
+        """Move a lista ativa para uma lista salva. None se estiver vazia."""
+        if not self.entries:
+            return None
+        session = {
+            "id": str(uuid.uuid4()),
+            "name": (name or "").strip() or self.default_session_name(),
+            "created": now_iso(),
+            "entries": self.entries,
+        }
+        self.sessions.insert(0, session)
+        self.entries = []
+        self.save()
+        return session
+
+    def rename_session(self, session_id, name):
+        session = self.get_session(session_id)
+        name = (name or "").strip()
+        if session is None or not name:
+            return None
+        session["name"] = name
+        self.save()
+        return session
+
+    def delete_session(self, session_id):
+        session = self.get_session(session_id)
+        if session is not None:
+            self.sessions.remove(session)
+            self.save()
+        return session
+
+    def reinsert_session(self, session, index=0):
+        if self.get_session(session["id"]) is None:
+            self.sessions.insert(max(0, min(index, len(self.sessions))), session)
+            self.save()
+
+    def restore_session(self, session_id):
+        """Volta uma lista salva para a lista ativa.
+
+        Se a lista ativa tiver registros, ela é salva antes. Retorna
+        (lista_restaurada, lista_salva_automaticamente_ou_None).
+        """
+        session = self.get_session(session_id)
+        if session is None:
+            return None, None
+        autosaved = None
+        if self.entries:
+            autosaved = {
+                "id": str(uuid.uuid4()),
+                "name": self.default_session_name() + " (auto)",
+                "created": now_iso(),
+                "entries": self.entries,
+            }
+        self.sessions.remove(session)
+        if autosaved:
+            self.sessions.insert(0, autosaved)
+        self.entries = list(session["entries"])
+        for e in self.entries:
+            if e["division"]:
+                self._remember_division(e["division"])
+                break
+        self.save()
+        return session, autosaved
+
+    # --- ajustes -------------------------------------------------------
+    def set_setting(self, key, value):
+        if key not in DEFAULT_SETTINGS:
+            raise KeyError(key)
+        self.settings[key] = bool(value)
+        self.save()
+
+    # --- resumo --------------------------------------------------------
+    def summary(self, today=None):
+        today = today or datetime.now().astimezone().date()
+        by_div = Counter(e["division"] for e in self.entries)
+        today_counts = Counter(
+            h["action"] for h in self.history if parse_ts(h["timestamp"]).date() == today)
+        return {
+            "total": len(self.entries),
+            "with_obs": sum(1 for e in self.entries if e.get("observation")),
+            "divisions": sorted(by_div.items(), key=lambda kv: (-kv[1], kv[0])),
+            "today_added": today_counts[ADD],
+            "today_duplicates": today_counts[DUPLICATE],
+            "today_scans": today_counts[SCAN],
+            "sessions": len(self.sessions),
+            "saved_entries": sum(len(s["entries"]) for s in self.sessions),
+        }
+
+    # --- backup --------------------------------------------------------
+    def backup_dict(self):
+        data = self.to_dict()
+        data["app"] = "neoncart"
+        data["exported"] = now_iso()
+        return data
+
+    def load_backup(self, data):
+        """Substitui todos os dados pelos do backup (dict ou texto JSON)."""
+        if isinstance(data, (str, bytes)):
+            try:
+                data = json.loads(data)
+            except json.JSONDecodeError as exc:
+                raise BackupError("Arquivo não é um JSON válido") from exc
+        if isinstance(data, list):
+            data = {"entries": data}
+        if not isinstance(data, dict) or not any(
+                k in data for k in ("entries", "sessions", "history")):
+            raise BackupError("Arquivo não é um backup do Neon Cart")
+        self._apply(data)
+        self.save()
+        return self.summary()
+
+
+# Compatibilidade com o nome antigo.
+EntryStore = Database

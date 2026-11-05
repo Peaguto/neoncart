@@ -1,6 +1,7 @@
 """Tela de leitura de código de barras / QR com a câmera."""
 
 import threading
+import time
 
 from kivy.clock import Clock, mainthread
 from kivy.properties import BooleanProperty, NumericProperty, ObjectProperty, StringProperty
@@ -19,6 +20,8 @@ except Exception as exc:  # noqa: BLE001 - lib nativa ausente
 
 RESOLUTION = (640, 480)
 SCAN_INTERVAL = 0.15
+SAME_CODE_COOLDOWN = 2.5  # modo contínuo: ignora o mesmo código por N s
+ANY_CODE_COOLDOWN = 0.8   # modo contínuo: pausa entre leituras
 
 
 def decode_gray(image):
@@ -52,7 +55,11 @@ def grab_gray_frame(camera):
 
 
 class ScannerModal(ModalView):
-    """Mostra a prévia da câmera e devolve o código lido em on_result."""
+    """Mostra a prévia da câmera e devolve o código lido em on_result.
+
+    No modo contínuo a janela continua aberta; quem trata on_result chama
+    show_feedback() para mostrar se o código foi registrado.
+    """
 
     status = StringProperty("INICIANDO ÓPTICA...")
     torch_on = BooleanProperty(False)
@@ -61,6 +68,12 @@ class ScannerModal(ModalView):
     mirror = BooleanProperty(False)
     preview_ratio = NumericProperty(4 / 3)
     camera = ObjectProperty(None, allownone=True)
+    continuous = BooleanProperty(False)
+    division = StringProperty("")
+    count = NumericProperty(0)
+    last_code = StringProperty("")
+    last_message = StringProperty("")
+    last_ok = BooleanProperty(True)
 
     __events__ = ("on_result",)
 
@@ -70,6 +83,8 @@ class ScannerModal(ModalView):
         self._busy = False
         self._done = False
         self._event = None
+        self._last_seen = ("", 0.0)
+        self._pause_until = 0.0
 
     def on_result(self, code):
         pass
@@ -189,10 +204,28 @@ class ScannerModal(ModalView):
     @mainthread
     def _decoded(self, code):
         self._busy = False
-        if code and not self._done:
+        if not code or self._done:
+            return
+        if not self.continuous:
             self._done = True
             self.dispatch("on_result", code)
             self.dismiss()
+            return
+        now = time.monotonic()
+        last_code, last_time = self._last_seen
+        if now < self._pause_until or (code == last_code and now - last_time < SAME_CODE_COOLDOWN):
+            return
+        self._last_seen = (code, now)
+        self._pause_until = now + ANY_CODE_COOLDOWN
+        self.dispatch("on_result", code)
+
+    def show_feedback(self, code, ok, message):
+        """Modo contínuo: mostra o resultado do último código lido."""
+        self.last_code = code
+        self.last_ok = ok
+        self.last_message = message
+        if ok:
+            self.count += 1
 
     # --- botões --------------------------------------------------------
     def toggle_torch(self):

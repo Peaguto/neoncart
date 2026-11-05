@@ -5,14 +5,34 @@ App de baixa de carrinhos convertido do app web (React) para Python com
 
 ## Funções
 
+**Lista (tela inicial)**
 - Cadastro de carrinho: setor/divisória, código e observação (código e setor em maiúsculas).
-- Bloqueio de código duplicado com alerta animado.
+- Setores recentes como atalhos de um toque.
+- Bloqueio de código duplicado com alerta animado, bipe e vibração.
 - Leitor de código de barras / QR pela câmera (pyzbar/zbar), com flash e troca de lente.
-- Busca por código, divisória ou observação.
-- Editar e excluir registros; limpar tudo (com confirmação).
-- Exportar planilha Excel `.xlsx` para **Downloads** (e compartilhar o arquivo no Android 10+).
-- Compartilhar relatório em texto (WhatsApp etc.) pelo menu de compartilhamento do Android.
-- Dados salvos em JSON na pasta privada do app.
+- **Modo contínuo**: a câmera fica aberta e registra cada código lido no setor atual.
+- Busca; editar; excluir com **DESFAZER**; limpar tudo (com confirmação e desfazer).
+- Exportar `.xlsx` (com aba de resumo por setor) para **Downloads**; compartilhar texto.
+
+**Histórico de scans**
+- Toda leitura da câmera, cadastro, duplicado, edição e exclusão, com data/hora e origem.
+- Filtros (lidos, registrados, duplicados, editados, excluídos) e busca.
+- Toque num item: mostra onde o código está e permite usá-lo de novo.
+- Exportar histórico em `.xlsx`; limpar histórico.
+
+**Listas salvas**
+- Salvar a lista atual com nome (ex.: turno, inventário) e começar uma nova.
+- Ver, compartilhar, exportar `.xlsx`, restaurar, renomear e excluir (com desfazer).
+
+**Resumo**
+- Totais da lista, registros/duplicados/leituras do dia, listas salvas e gráfico por setor.
+
+**Ajustes**
+- Modo contínuo, vibração e som.
+- Backup completo (`.json`) para Downloads e importação de backup.
+- Botão voltar do Android retorna à tela inicial.
+
+Dados salvos em `neoncart.json` na pasta privada do app (migra o `entries.json` da versão 1).
 
 ## Estrutura
 
@@ -20,10 +40,10 @@ App de baixa de carrinhos convertido do app web (React) para Python com
 |---|---|
 | `main.py` | App Kivy, telas e ações |
 | `neoncart.kv` | Layout e tema neon |
-| `storage.py` | Registros, duplicidade, busca, persistência (sem Kivy) |
-| `exporter.py` | Planilha `.xlsx` e texto para compartilhar |
-| `scanner.py` | Câmera + decodificação de código de barras |
-| `platform_utils.py` | Android via pyjnius: permissões, compartilhar, Downloads, flash |
+| `storage.py` | Dados: lista, histórico, listas salvas, resumo, backup (sem Kivy) |
+| `exporter.py` | Planilhas `.xlsx`, backup `.json` e textos para compartilhar |
+| `scanner.py` | Câmera, decodificação e modo contínuo |
+| `platform_utils.py` | Android via pyjnius: permissões, compartilhar, Downloads, flash, vibração, seletor de arquivo |
 | `theme.py` | Cores, ícones e degradês |
 | `buildozer.spec` | Configuração do APK |
 
@@ -55,4 +75,4 @@ O APK sai em `bin/`. A primeira compilação baixa Android SDK/NDK (vários GB) 
 ## Licenças de terceiros
 
 Ícones: Material Design Icons (Pictogrammers), licença Apache 2.0 —
-`assets/fonts/materialdesignicons-webfont.ttf`.
+`assets/fonts/materialdesignicons-webfont.ttf`. Sons em `assets/sounds/` gerados pelo projeto.

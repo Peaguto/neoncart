@@ -3,8 +3,9 @@
 #:import dp kivy.metrics.dp
 #:import Window kivy.core.window.Window
 #:import escape_markup kivy.utils.escape_markup
+#:import NoTransition kivy.uix.screenmanager.NoTransition
 
-# ---------------------------------------------------------------- base
+# ================================================================ base
 <IconLabel>:
     text: self.icon
     font_name: app.icon_font
@@ -38,6 +39,17 @@
     halign: "left"
     padding: dp(4), 0
 
+<GroupTitle@Label>:
+    font_size: "12sp"
+    bold: True
+    color: C.pink400
+    size_hint_y: None
+    height: dp(28)
+    text_size: self.size
+    halign: "left"
+    valign: "bottom"
+    padding: dp(6), 0
+
 <NeonInput>:
     multiline: False
     write_tab: False
@@ -48,10 +60,10 @@
     cursor_color: C.pink500
     selection_color: (0.93, 0.28, 0.6, 0.3)
     hint_text_color: C.hint
-    font_size: "17sp"
+    font_size: "16sp"
     padding: [dp(46) if self.icon else dp(16), (self.height - self.line_height) / 2, dp(16), 0]
     size_hint_y: None
-    height: dp(52)
+    height: dp(48)
     canvas.after:
         Color:
             rgba: C.pink500 if self.focus else C.border
@@ -61,9 +73,10 @@
 
 <GradientButton>:
     size_hint_y: None
-    height: dp(56)
+    height: dp(52)
     padding: dp(16), 0
     spacing: dp(8)
+    opacity: 0.45 if self.disabled else 1
     canvas.before:
         Color:
             rgba: (1, 0.45, 0.75, 0.35)
@@ -94,6 +107,45 @@
         width: self.texture_size[0]
     Widget:
 
+<Chip>:
+    font_size: "12sp"
+    bold: True
+    color: C.white if self.active else C.pink300
+    size_hint: None, None
+    size: self.texture_size[0] + dp(24), dp(30)
+    canvas.before:
+        Color:
+            rgba: (0.86, 0.15, 0.47, 0.55) if self.active else ((0.35, 0.11, 0.53, 0.55) if self.state == "down" else (0.35, 0.11, 0.53, 0.3))
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(15)]
+        Color:
+            rgba: C.pink500 if self.active else C.border_soft
+        Line:
+            rounded_rectangle: (self.x, self.y, self.width, self.height, dp(15))
+
+<DivisionChip@Chip>:
+    on_release: app.pick_division(self.text)
+
+<FilterChip@Chip>:
+    value: ""
+    on_release: app.history_filter = self.value
+
+<ChipStrip@RecycleView>:
+    do_scroll_y: False
+    do_scroll_x: True
+    bar_width: 0
+    size_hint_y: None
+    height: dp(32)
+    RecycleBoxLayout:
+        orientation: "horizontal"
+        spacing: dp(6)
+        size_hint: None, None
+        width: self.minimum_width
+        height: dp(30)
+        pos_hint: {"center_y": .5}
+
 <Card@BoxLayout>:
     orientation: "vertical"
     canvas.before:
@@ -116,7 +168,104 @@
         Line:
             rounded_rectangle: (self.x, self.y, self.width, self.height, dp(16))
 
-# ---------------------------------------------------------------- tela principal
+<CardHeader@BoxLayout>:
+    icon: ""
+    title: ""
+    badge: ""
+    size_hint_y: None
+    height: dp(52)
+    padding: dp(14), 0, dp(6), 0
+    spacing: dp(6)
+    canvas.before:
+        Color:
+            rgba: C.field
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(16), dp(16), 0, 0]
+        Color:
+            rgba: C.border
+        Line:
+            points: self.x, self.y, self.right, self.y
+    IconLabel:
+        icon: root.icon
+        color: C.pink400
+        font_size: "18sp"
+        pos_hint: {"center_y": .5}
+    Label:
+        text: root.title
+        bold: True
+        color: C.pink400
+        font_size: "14sp"
+        size_hint_x: None
+        width: self.texture_size[0]
+    Label:
+        text: root.badge
+        color: C.pink300
+        font_size: "12sp"
+        size_hint: None, None
+        size: self.texture_size[0] + dp(14), dp(22)
+        pos_hint: {"center_y": .5}
+        opacity: 1 if root.badge else 0
+        canvas.before:
+            Color:
+                rgba: (0.51, 0.09, 0.26, 0.4)
+            RoundedRectangle:
+                pos: self.pos
+                size: self.size
+                radius: [dp(6)]
+            Color:
+                rgba: (0.93, 0.28, 0.6, 0.3)
+            Line:
+                rounded_rectangle: (self.x, self.y, self.width, self.height, dp(6))
+    Widget:
+
+<EmptyState@BoxLayout>:
+    icon: ""
+    text: ""
+    orientation: "vertical"
+    padding: dp(20)
+    spacing: dp(10)
+    Widget:
+    IconLabel:
+        icon: root.icon
+        font_size: "44sp"
+        color: (0.42, 0.13, 0.66, 0.5)
+        pos_hint: {"center_x": .5}
+    Label:
+        text: root.text
+        font_name: "RobotoMono-Regular"
+        font_size: "13sp"
+        color: C.purple700
+        size_hint_y: None
+        height: self.texture_size[1] + dp(8)
+        text_size: self.width, None
+        halign: "center"
+    Widget:
+
+# ================================================================ raiz
+<NavButton>:
+    orientation: "vertical"
+    padding: 0, dp(8), 0, dp(6)
+    on_release: app.go(self.screen)
+    canvas.before:
+        Color:
+            rgba: C.pink500 if app.current_screen == self.screen else (0, 0, 0, 0)
+        RoundedRectangle:
+            pos: self.center_x - dp(18), self.top - dp(3)
+            size: dp(36), dp(3)
+            radius: [dp(2)]
+    IconLabel:
+        icon: root.icon
+        font_size: "24sp"
+        color: C.pink400 if app.current_screen == root.screen else C.purple700
+        pos_hint: {"center_x": .5}
+    Label:
+        text: root.text
+        bold: True
+        font_size: "10sp"
+        color: C.pink300 if app.current_screen == root.screen else C.purple700
+
 <Root>:
     canvas.before:
         Color:
@@ -127,78 +276,204 @@
 
     BoxLayout:
         orientation: "vertical"
-        padding: dp(16), dp(16), dp(16), dp(12)
-        spacing: dp(14)
 
         # Cabeçalho
         BoxLayout:
             size_hint_y: None
             height: dp(76)
-            padding: dp(16), dp(12)
-            spacing: dp(14)
-            canvas.before:
-                Color:
-                    rgba: (0.66, 0.33, 0.97, 0.2)
-                BoxShadow:
-                    pos: self.pos
-                    size: self.size
-                    offset: 0, 0
-                    blur_radius: dp(20)
-                    border_radius: [dp(16)] * 4
-                Color:
-                    rgba: 1, 1, 1, 1
-                RoundedRectangle:
-                    pos: self.pos
-                    size: self.size
-                    radius: [dp(16)]
-                    texture: app.grad_header
-                Color:
-                    rgba: C.border_soft
-                Line:
-                    rounded_rectangle: (self.x, self.y, self.width, self.height, dp(16))
-            AnchorLayout:
-                size_hint_x: None
-                width: dp(52)
+            padding: dp(16), dp(12), dp(16), 0
+            BoxLayout:
+                padding: dp(12), dp(8)
+                spacing: dp(12)
                 canvas.before:
                     Color:
-                        rgba: (0, 0, 0, 0.4)
+                        rgba: (0.66, 0.33, 0.97, 0.2)
+                    BoxShadow:
+                        pos: self.pos
+                        size: self.size
+                        offset: 0, 0
+                        blur_radius: dp(20)
+                        border_radius: [dp(16)] * 4
+                    Color:
+                        rgba: 1, 1, 1, 1
                     RoundedRectangle:
                         pos: self.pos
                         size: self.size
-                        radius: [dp(12)]
+                        radius: [dp(16)]
+                        texture: app.grad_header
                     Color:
-                        rgba: (0.93, 0.28, 0.6, 0.3)
+                        rgba: C.border_soft
                     Line:
-                        rounded_rectangle: (self.x, self.y, self.width, self.height, dp(12))
-                IconLabel:
-                    icon: I.cart
-                    font_size: "30sp"
-                    color: C.pink400
-            BoxLayout:
-                orientation: "vertical"
+                        rounded_rectangle: (self.x, self.y, self.width, self.height, dp(16))
+                AnchorLayout:
+                    size_hint_x: None
+                    width: dp(44)
+                    canvas.before:
+                        Color:
+                            rgba: (0, 0, 0, 0.4)
+                        RoundedRectangle:
+                            pos: self.pos
+                            size: self.size
+                            radius: [dp(12)]
+                        Color:
+                            rgba: (0.93, 0.28, 0.6, 0.3)
+                        Line:
+                            rounded_rectangle: (self.x, self.y, self.width, self.height, dp(12))
+                    IconLabel:
+                        icon: I.cart
+                        font_size: "26sp"
+                        color: C.pink400
+                BoxLayout:
+                    orientation: "vertical"
+                    Label:
+                        text: "NEON CART"
+                        bold: True
+                        font_size: "21sp"
+                        color: C.pink300
+                        text_size: self.size
+                        halign: "left"
+                        valign: "bottom"
+                    Label:
+                        text: app.screen_title
+                        bold: True
+                        font_size: "11sp"
+                        color: C.purple300
+                        text_size: self.size
+                        halign: "left"
+                        valign: "top"
                 Label:
-                    text: "NEON CART"
-                    bold: True
-                    font_size: "24sp"
-                    color: C.pink300
-                    text_size: self.size
-                    halign: "left"
-                    valign: "bottom"
-                Label:
-                    text: "CONTROLE DE ESTOQUE"
-                    bold: True
+                    text: "{} na lista".format(app.total)
+                    font_name: "RobotoMono-Regular"
                     font_size: "11sp"
-                    color: C.purple300
-                    text_size: self.size
-                    halign: "left"
-                    valign: "top"
+                    color: C.pink200
+                    size_hint_x: None
+                    width: self.texture_size[0] + dp(4)
 
-        # Formulário
+        ScreenManager:
+            id: sm
+            transition: NoTransition()
+            HomeScreen:
+                name: "home"
+            HistoryScreen:
+                name: "history"
+            SavedScreen:
+                name: "saved"
+            SummaryScreen:
+                name: "summary"
+            SettingsScreen:
+                name: "settings"
+
+        # Navegação inferior
+        BoxLayout:
+            size_hint_y: None
+            height: dp(62)
+            canvas.before:
+                Color:
+                    rgba: C.field
+                Rectangle:
+                    pos: self.pos
+                    size: self.size
+                Color:
+                    rgba: C.border
+                Line:
+                    points: self.x, self.top, self.right, self.top
+            NavButton:
+                icon: I.cart
+                text: "LISTA"
+                screen: "home"
+            NavButton:
+                icon: I.history
+                text: "HISTÓRICO"
+                screen: "history"
+            NavButton:
+                icon: I.folders
+                text: "SALVOS"
+                screen: "saved"
+            NavButton:
+                icon: I.chart
+                text: "RESUMO"
+                screen: "summary"
+            NavButton:
+                icon: I.cog
+                text: "AJUSTES"
+                screen: "settings"
+
+    # Aviso com "desfazer"
+    Snackbar:
+        id: snackbar
+        size_hint: None, None
+        width: min(root.width - dp(32), dp(420))
+        height: dp(52)
+        pos_hint: {"center_x": .5}
+        y: dp(74)
+        opacity: 0
+        disabled: True
+
+    # Alerta de código duplicado (fica escondido acima da tela)
+    DuplicateAlert:
+        id: dup_alert
+        size_hint: None, None
+        width: min(root.width * 0.9, dp(380))
+        height: dp(76)
+        pos_hint: {"center_x": .5}
+        y: root.top + dp(100)
+        opacity: 0
+
+<Snackbar>:
+    padding: dp(14), 0, dp(6), 0
+    spacing: dp(8)
+    canvas.before:
+        Color:
+            rgba: (0, 0, 0, 0.6)
+        BoxShadow:
+            pos: self.pos
+            size: self.size
+            offset: 0, 0
+            blur_radius: dp(16)
+            border_radius: [dp(12)] * 4
+        Color:
+            rgba: (0.12, 0.07, 0.17, 1)
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(12)]
+        Color:
+            rgba: (0.93, 0.28, 0.6, 0.5)
+        Line:
+            rounded_rectangle: (self.x, self.y, self.width, self.height, dp(12))
+    Label:
+        text: root.message
+        color: C.pink100
+        font_size: "13sp"
+        text_size: self.size
+        halign: "left"
+        valign: "middle"
+        shorten: True
+        shorten_from: "right"
+    Button:
+        text: root.action_text
+        bold: True
+        font_size: "13sp"
+        color: C.pink400
+        background_normal: ""
+        background_color: (0, 0, 0, 0)
+        size_hint_x: None
+        width: (self.texture_size[0] + dp(20)) if root.action_text else 0
+        opacity: 1 if root.action_text else 0
+        on_release: root.run_action()
+
+# ================================================================ tela: lista
+<HomeScreen>:
+    BoxLayout:
+        orientation: "vertical"
+        padding: dp(16), dp(12), dp(16), dp(10)
+        spacing: dp(10)
+
         Card:
             size_hint_y: None
             height: self.minimum_height
-            padding: dp(18)
-            spacing: dp(6)
+            padding: dp(16), dp(12)
+            spacing: dp(4)
 
             SectionLabel:
                 text: "SETOR / DIVISÓRIA"
@@ -208,15 +483,29 @@
                 hint_text: "Ex: SETOR-X"
                 uppercase: True
                 on_text_validate: code.focus = True
+            ChipStrip:
+                height: dp(36) if app.recent_divisions else 0
+                opacity: 1 if app.recent_divisions else 0
+                viewclass: "DivisionChip"
+                data: [{"text": d, "active": d == division.text.strip().upper()} for d in app.recent_divisions]
 
-            Widget:
+            BoxLayout:
                 size_hint_y: None
-                height: dp(6)
-            SectionLabel:
-                text: "IDENTIFICAÇÃO DO CARRINHO"
+                height: dp(30)
+                SectionLabel:
+                    text: "IDENTIFICAÇÃO DO CARRINHO"
+                    pos_hint: {"center_y": .5}
+                Chip:
+                    text: "[font={}]{}[/font] CONTÍNUO".format(app.icon_font, I.repeat)
+                    markup: True
+                    active: app.continuous
+                    font_size: "11sp"
+                    height: dp(26)
+                    pos_hint: {"center_y": .5}
+                    on_release: app.toggle_continuous()
             RelativeLayout:
                 size_hint_y: None
-                height: dp(52)
+                height: dp(50)
                 NeonInput:
                     id: code
                     icon: I.cart
@@ -224,103 +513,57 @@
                     uppercase: True
                     font_name: "RobotoMono-Regular"
                     foreground_color: C.pink300
+                    height: dp(50)
                     padding: [dp(46), (self.height - self.line_height) / 2, dp(56), 0]
                     pos: 0, 0
                     on_text_validate: app.submit()
                 IconButton:
-                    icon: I.camera
+                    icon: I.barcode if app.continuous else I.camera
                     icon_color: C.pink600
                     hover_bg: (0.51, 0.09, 0.26, 0.3)
                     pos: self.parent.width - self.width - dp(6), (self.parent.height - self.height) / 2
                     on_release: app.open_scanner()
 
-            Widget:
-                size_hint_y: None
-                height: dp(6)
             BoxLayout:
                 size_hint_y: None
-                height: dp(18)
+                height: dp(22)
                 SectionLabel:
                     text: "OBSERVAÇÃO  [color=#9333eab3][size=10sp](Opcional)[/size][/color]"
                     markup: True
+                    pos_hint: {"center_y": .5}
             NeonInput:
                 id: observation
                 icon: I.message
                 hint_text: "Ex: Roda quebrada..."
                 font_size: "14sp"
-                height: dp(46)
+                height: dp(44)
                 on_text_validate: app.submit()
 
             Widget:
                 size_hint_y: None
-                height: dp(10)
+                height: dp(8)
             GradientButton:
                 icon: I.plus
                 text: "PROCESSAR DADOS"
                 texture: app.grad_main
                 on_release: app.submit()
 
-        # Busca
         NeonInput:
             id: search
             icon: I.search
             hint_text: "Buscar código, divisória ou obs..."
-            font_size: "15sp"
-            height: dp(48) if app.total else 0
+            font_size: "14sp"
+            height: dp(44) if app.total else 0
             opacity: 1 if app.total else 0
             disabled: not app.total
             background_color: C.card
             on_text: app.search_query = self.text
 
-        # Lista
         Card:
-            BoxLayout:
-                size_hint_y: None
-                height: dp(54)
-                padding: dp(14), 0, dp(8), 0
-                spacing: dp(6)
-                canvas.before:
-                    Color:
-                        rgba: C.field
-                    RoundedRectangle:
-                        pos: self.pos
-                        size: self.size
-                        radius: [dp(16), dp(16), 0, 0]
-                    Color:
-                        rgba: C.border
-                    Line:
-                        points: self.x, self.y, self.right, self.y
-                IconLabel:
-                    icon: I.history
-                    color: C.pink400
-                    font_size: "18sp"
-                    pos_hint: {"center_y": .5}
-                Label:
-                    text: "LOG DE REDE"
-                    bold: True
-                    color: C.pink400
-                    font_size: "14sp"
-                    size_hint_x: None
-                    width: self.texture_size[0]
-                Label:
-                    text: "{}{}".format(app.visible, " / {}".format(app.total) if app.search_query else "")
-                    color: C.pink300
-                    font_size: "12sp"
-                    size_hint: None, None
-                    size: self.texture_size[0] + dp(14), dp(22)
-                    pos_hint: {"center_y": .5}
-                    canvas.before:
-                        Color:
-                            rgba: (0.51, 0.09, 0.26, 0.4)
-                        RoundedRectangle:
-                            pos: self.pos
-                            size: self.size
-                            radius: [dp(6)]
-                        Color:
-                            rgba: (0.93, 0.28, 0.6, 0.3)
-                        Line:
-                            rounded_rectangle: (self.x, self.y, self.width, self.height, dp(6))
-                Widget:
+            CardHeader:
+                icon: I.history
+                title: "LOG DE REDE"
+                badge: "{}{}".format(app.visible, " / {}".format(app.total) if app.search_query else "")
                 IconButton:
                     icon: I.share
                     disabled: not app.total
@@ -333,6 +576,12 @@
                     hover_bg: (0.51, 0.09, 0.26, 0.3)
                     pos_hint: {"center_y": .5}
                     on_release: app.export()
+                IconButton:
+                    icon: I.save_all
+                    disabled: not app.total
+                    hover_bg: (0.51, 0.09, 0.26, 0.3)
+                    pos_hint: {"center_y": .5}
+                    on_release: app.prompt_save_session()
                 IconButton:
                     icon: I.trash
                     disabled: not app.total
@@ -355,40 +604,569 @@
                         default_size_hint: 1, None
                         size_hint_y: None
                         height: self.minimum_height
-
-                BoxLayout:
-                    orientation: "vertical"
+                EmptyState:
                     pos: self.parent.pos
                     size: self.parent.size
                     opacity: 1 if app.visible == 0 else 0
-                    padding: dp(20)
-                    spacing: dp(10)
-                    Widget:
-                    IconLabel:
-                        icon: I.cart if app.total == 0 else I.search
-                        font_size: "48sp" if app.total == 0 else "32sp"
-                        color: (0.42, 0.13, 0.66, 0.5) if app.total == 0 else (0.58, 0.2, 0.92, 0.5)
-                        pos_hint: {"center_x": .5}
-                    Label:
-                        text: "SISTEMA VAZIO" if app.total == 0 else "NENHUM RESULTADO"
-                        font_name: "RobotoMono-Regular"
-                        font_size: "13sp"
-                        color: C.purple800 if app.total == 0 else C.purple600
+                    icon: I.cart if app.total == 0 else I.search
+                    text: "SISTEMA VAZIO" if app.total == 0 else "NENHUM RESULTADO"
+
+# ================================================================ tela: histórico
+<HistoryScreen>:
+    BoxLayout:
+        orientation: "vertical"
+        padding: dp(16), dp(12), dp(16), dp(10)
+        spacing: dp(10)
+        NeonInput:
+            icon: I.search
+            hint_text: "Buscar código ou setor..."
+            font_size: "14sp"
+            height: dp(44)
+            background_color: C.card
+            on_text: app.history_query = self.text
+        ChipStrip:
+            viewclass: "FilterChip"
+            data: [{"text": label, "value": value or "", "active": (value or "") == app.history_filter} for label, value in app.history_filters]
+        Card:
+            CardHeader:
+                icon: I.barcode
+                title: "SCANS"
+                badge: "{}{}".format(app.history_visible, " / {}".format(app.history_total) if app.history_visible != app.history_total else "")
+                IconButton:
+                    icon: I.download
+                    disabled: not app.history_visible
+                    hover_bg: (0.51, 0.09, 0.26, 0.3)
+                    pos_hint: {"center_y": .5}
+                    on_release: app.export_history()
+                IconButton:
+                    icon: I.sweep
+                    disabled: not app.history_total
+                    hover_bg: (0.5, 0.11, 0.11, 0.3)
+                    pos_hint: {"center_y": .5}
+                    on_release: app.clear_history()
+            FloatLayout:
+                RecycleView:
+                    id: rv
+                    viewclass: "HistoryRow"
+                    pos: self.parent.pos
+                    size: self.parent.size
+                    bar_width: dp(6)
+                    bar_color: C.purple900
+                    scroll_type: ["bars", "content"]
+                    RecycleBoxLayout:
+                        orientation: "vertical"
+                        default_size_hint: 1, None
+                        default_size: None, dp(64)
                         size_hint_y: None
-                        height: dp(24)
-                    Widget:
+                        height: self.minimum_height
+                EmptyState:
+                    pos: self.parent.pos
+                    size: self.parent.size
+                    opacity: 1 if app.history_visible == 0 else 0
+                    icon: I.history
+                    text: "NENHUM SCAN AINDA" if app.history_total == 0 else "NENHUM RESULTADO"
 
-    # Alerta de código duplicado (fica escondido acima da tela)
-    DuplicateAlert:
-        id: dup_alert
-        size_hint: None, None
-        width: min(root.width * 0.9, dp(380))
-        height: dp(76)
-        center_x: root.center_x
-        y: root.top + dp(100)
-        opacity: 0
+<HistoryRow>:
+    padding: dp(14), dp(8)
+    spacing: dp(12)
+    on_release: app.history_item(self.code)
+    canvas.before:
+        Color:
+            rgba: (0.35, 0.11, 0.53, 0.15) if self.state == "down" else (0, 0, 0, 0)
+        Rectangle:
+            pos: self.pos
+            size: self.size
+    canvas.after:
+        Color:
+            rgba: (0.35, 0.11, 0.53, 0.3)
+        Line:
+            points: self.x, self.y, self.right, self.y
+    AnchorLayout:
+        size_hint_x: None
+        width: dp(38)
+        canvas.before:
+            Color:
+                rgba: root.color[:3] + [0.15]
+            Ellipse:
+                pos: self.x, self.center_y - dp(19)
+                size: dp(38), dp(38)
+        IconLabel:
+            icon: root.icon
+            color: root.color
+    BoxLayout:
+        orientation: "vertical"
+        BoxLayout:
+            spacing: dp(8)
+            Label:
+                text: root.code
+                font_name: "RobotoMono-Regular"
+                font_size: "15sp"
+                color: C.pink200
+                size_hint_x: None
+                width: min(self.texture_size[0], self.parent.width - dp(100))
+                shorten: True
+            Label:
+                text: root.action_label
+                bold: True
+                font_size: "9sp"
+                color: root.color
+                size_hint: None, None
+                size: self.texture_size[0] + dp(10), dp(18)
+                pos_hint: {"center_y": .5}
+                canvas.before:
+                    Color:
+                        rgba: root.color[:3] + [0.15]
+                    RoundedRectangle:
+                        pos: self.pos
+                        size: self.size
+                        radius: [dp(5)]
+            Widget:
+        Label:
+            text: ("{}  ·  ".format(root.division) if root.division else "") + root.when
+            font_size: "11sp"
+            color: C.purple400
+            text_size: self.size
+            halign: "left"
+            valign: "middle"
+            shorten: True
+    IconLabel:
+        icon: I.camera if root.source == "camera" else (I.undo if root.source == "desfazer" else I.keyboard)
+        font_size: "16sp"
+        color: C.purple700
+        pos_hint: {"center_y": .5}
 
-# ---------------------------------------------------------------- linha da lista
+# ================================================================ tela: salvos
+<SavedScreen>:
+    BoxLayout:
+        orientation: "vertical"
+        padding: dp(16), dp(12), dp(16), dp(10)
+        spacing: dp(12)
+        GradientButton:
+            icon: I.save_all
+            text: "SALVAR LISTA ATUAL ({})".format(app.total)
+            texture: app.grad_main
+            disabled: not app.total
+            on_release: app.prompt_save_session()
+        Card:
+            CardHeader:
+                icon: I.folders
+                title: "LISTAS SALVAS"
+                badge: str(app.sessions_total)
+            FloatLayout:
+                RecycleView:
+                    id: rv
+                    viewclass: "SessionRow"
+                    pos: self.parent.pos
+                    size: self.parent.size
+                    bar_width: dp(6)
+                    bar_color: C.purple900
+                    scroll_type: ["bars", "content"]
+                    RecycleBoxLayout:
+                        orientation: "vertical"
+                        default_size_hint: 1, None
+                        default_size: None, dp(128)
+                        size_hint_y: None
+                        height: self.minimum_height
+                EmptyState:
+                    pos: self.parent.pos
+                    size: self.parent.size
+                    opacity: 1 if app.sessions_total == 0 else 0
+                    icon: I.archive
+                    text: "NENHUMA LISTA SALVA\nUse SALVAR LISTA para fechar um turno ou inventário."
+
+<SessionRow>:
+    orientation: "vertical"
+    padding: dp(14), dp(10), dp(8), dp(4)
+    spacing: dp(2)
+    canvas.after:
+        Color:
+            rgba: (0.35, 0.11, 0.53, 0.3)
+        Line:
+            points: self.x, self.y, self.right, self.y
+    BoxLayout:
+        size_hint_y: None
+        height: dp(26)
+        spacing: dp(8)
+        Label:
+            text: root.name
+            bold: True
+            font_size: "15sp"
+            color: C.pink200
+            text_size: self.size
+            halign: "left"
+            valign: "middle"
+            shorten: True
+        Label:
+            text: "{} carrinhos".format(root.count)
+            font_size: "11sp"
+            color: C.pink300
+            size_hint: None, None
+            size: self.texture_size[0] + dp(14), dp(22)
+            pos_hint: {"center_y": .5}
+            canvas.before:
+                Color:
+                    rgba: (0.51, 0.09, 0.26, 0.4)
+                RoundedRectangle:
+                    pos: self.pos
+                    size: self.size
+                    radius: [dp(6)]
+    Label:
+        text: root.when
+        font_name: "RobotoMono-Regular"
+        font_size: "11sp"
+        color: C.purple500
+        size_hint_y: None
+        height: dp(18)
+        text_size: self.size
+        halign: "left"
+    Label:
+        text: root.detail
+        font_size: "11sp"
+        color: C.purple400
+        size_hint_y: None
+        height: dp(18)
+        text_size: self.size
+        halign: "left"
+        shorten: True
+    BoxLayout:
+        size_hint_y: None
+        height: dp(44)
+        spacing: dp(2)
+        IconButton:
+            icon: I.eye
+            icon_color: C.pink300
+            hover_bg: (0.35, 0.11, 0.53, 0.4)
+            on_release: app.view_session(root.session_id)
+        IconButton:
+            icon: I.share
+            hover_bg: (0.08, 0.33, 0.18, 0.3)
+            on_release: app.share_session(root.session_id)
+        IconButton:
+            icon: I.download
+            hover_bg: (0.51, 0.09, 0.26, 0.3)
+            on_release: app.export_session(root.session_id)
+        IconButton:
+            icon: I.restore
+            hover_bg: (0.12, 0.23, 0.54, 0.3)
+            on_release: app.restore_session(root.session_id)
+        IconButton:
+            icon: I.edit
+            hover_bg: (0.12, 0.23, 0.54, 0.3)
+            on_release: app.rename_session(root.session_id)
+        Widget:
+        IconButton:
+            icon: I.trash2
+            icon_color: C.purple700
+            hover_bg: (0.5, 0.11, 0.11, 0.3)
+            on_release: app.delete_session(root.session_id)
+
+# ================================================================ tela: resumo
+<StatTile>:
+    orientation: "vertical"
+    padding: dp(12), dp(10)
+    canvas.before:
+        Color:
+            rgba: C.card
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(14)]
+        Color:
+            rgba: C.border
+        Line:
+            rounded_rectangle: (self.x, self.y, self.width, self.height, dp(14))
+    BoxLayout:
+        spacing: dp(8)
+        IconLabel:
+            icon: root.icon
+            color: root.color
+            pos_hint: {"center_y": .5}
+        Label:
+            text: root.value
+            bold: True
+            font_size: "26sp"
+            color: root.color
+            text_size: self.size
+            halign: "left"
+            valign: "middle"
+    Label:
+        text: root.label
+        bold: True
+        font_size: "10sp"
+        color: C.purple400
+        size_hint_y: None
+        height: dp(16)
+        text_size: self.size
+        halign: "left"
+
+<DivisionBar>:
+    size_hint_y: None
+    height: dp(36)
+    spacing: dp(10)
+    Label:
+        text: root.division
+        font_size: "12sp"
+        bold: True
+        color: C.pink300
+        size_hint_x: .38
+        text_size: self.size
+        halign: "left"
+        valign: "middle"
+        shorten: True
+    Widget:
+        canvas:
+            Color:
+                rgba: (0.35, 0.11, 0.53, 0.25)
+            RoundedRectangle:
+                pos: self.x, self.center_y - dp(7)
+                size: self.width, dp(14)
+                radius: [dp(7)]
+            Color:
+                rgba: 1, 1, 1, 1
+            RoundedRectangle:
+                pos: self.x, self.center_y - dp(7)
+                size: max(dp(14), self.width * root.ratio), dp(14)
+                radius: [dp(7)]
+                texture: app.grad_main
+    Label:
+        text: str(root.count)
+        font_name: "RobotoMono-Regular"
+        font_size: "13sp"
+        color: C.pink200
+        size_hint_x: None
+        width: dp(40)
+        text_size: self.size
+        halign: "right"
+        valign: "middle"
+
+<SummaryScreen>:
+    ScrollView:
+        do_scroll_x: False
+        bar_width: dp(4)
+        BoxLayout:
+            orientation: "vertical"
+            size_hint_y: None
+            height: self.minimum_height
+            padding: dp(16), dp(12), dp(16), dp(16)
+            spacing: dp(12)
+            GridLayout:
+                cols: 2
+                spacing: dp(10)
+                size_hint_y: None
+                height: self.minimum_height
+                row_default_height: dp(84)
+                row_force_default: True
+                StatTile:
+                    icon: I.cart
+                    value: str(app.summary["total"])
+                    label: "NA LISTA ATUAL"
+                StatTile:
+                    icon: I.message
+                    value: str(app.summary["with_obs"])
+                    label: "COM OBSERVAÇÃO"
+                    color: C.purple300
+                StatTile:
+                    icon: I.ok
+                    value: str(app.summary["today_added"])
+                    label: "REGISTRADOS HOJE"
+                    color: C.green400
+                StatTile:
+                    icon: I.alert
+                    value: str(app.summary["today_duplicates"])
+                    label: "DUPLICADOS HOJE"
+                    color: C.red500
+                StatTile:
+                    icon: I.barcode
+                    value: str(app.summary["today_scans"])
+                    label: "LEITURAS HOJE"
+                    color: C.amber400
+                StatTile:
+                    icon: I.folders
+                    value: str(app.summary["sessions"])
+                    label: "LISTAS SALVAS ({} carr.)".format(app.summary["saved_entries"])
+                    color: C.blue400
+            Card:
+                size_hint_y: None
+                height: self.minimum_height
+                CardHeader:
+                    icon: I.grid
+                    title: "POR SETOR"
+                    badge: str(len(app.summary["divisions"]))
+                BoxLayout:
+                    id: bars
+                    orientation: "vertical"
+                    size_hint_y: None
+                    height: self.minimum_height
+                    padding: dp(14), dp(8)
+                    spacing: dp(2)
+                Label:
+                    text: "Nenhum carrinho na lista atual."
+                    font_size: "13sp"
+                    color: C.purple700
+                    size_hint_y: None
+                    height: dp(48) if not app.summary["divisions"] else 0
+                    opacity: 1 if not app.summary["divisions"] else 0
+            GradientButton:
+                icon: I.share
+                text: "COMPARTILHAR RESUMO"
+                texture: app.grad_main
+                on_release: app.share_summary()
+
+# ================================================================ tela: ajustes
+<ToggleRow>:
+    size_hint_y: None
+    height: dp(64)
+    padding: dp(14), dp(8)
+    spacing: dp(12)
+    on_release: self.active = not self.active
+    IconLabel:
+        icon: root.icon
+        color: C.pink400 if root.active else C.purple600
+        pos_hint: {"center_y": .5}
+    BoxLayout:
+        orientation: "vertical"
+        Label:
+            text: root.title
+            bold: True
+            font_size: "14sp"
+            color: C.pink100
+            text_size: self.size
+            halign: "left"
+            valign: "bottom"
+        Label:
+            text: root.subtitle
+            font_size: "11sp"
+            color: C.purple400
+            text_size: self.size
+            halign: "left"
+            valign: "top"
+            shorten: True
+    Widget:
+        size_hint_x: None
+        width: dp(46)
+        canvas:
+            Color:
+                rgba: C.pink600 if root.active else (0.35, 0.11, 0.53, 0.5)
+            RoundedRectangle:
+                pos: self.x, self.center_y - dp(12)
+                size: dp(46), dp(24)
+                radius: [dp(12)]
+            Color:
+                rgba: C.white if root.active else C.purple300
+            Ellipse:
+                pos: (self.x + dp(25) if root.active else self.x + dp(3)), self.center_y - dp(9)
+                size: dp(18), dp(18)
+
+<ActionRow>:
+    size_hint_y: None
+    height: dp(60)
+    padding: dp(14), dp(8)
+    spacing: dp(12)
+    canvas.before:
+        Color:
+            rgba: (0.35, 0.11, 0.53, 0.2) if self.state == "down" else (0, 0, 0, 0)
+        Rectangle:
+            pos: self.pos
+            size: self.size
+    IconLabel:
+        icon: root.icon
+        color: C.red500 if root.danger else C.pink400
+        pos_hint: {"center_y": .5}
+    BoxLayout:
+        orientation: "vertical"
+        Label:
+            text: root.title
+            bold: True
+            font_size: "14sp"
+            color: C.red500 if root.danger else C.pink100
+            text_size: self.size
+            halign: "left"
+            valign: "bottom"
+        Label:
+            text: root.subtitle
+            font_size: "11sp"
+            color: C.purple400
+            text_size: self.size
+            halign: "left"
+            valign: "top"
+            shorten: True
+
+<SettingsScreen>:
+    ScrollView:
+        do_scroll_x: False
+        bar_width: dp(4)
+        BoxLayout:
+            orientation: "vertical"
+            size_hint_y: None
+            height: self.minimum_height
+            padding: dp(16), dp(4), dp(16), dp(16)
+            spacing: dp(6)
+            GroupTitle:
+                text: "LEITURA"
+            Card:
+                size_hint_y: None
+                height: self.minimum_height
+                padding: 0, dp(4)
+                ToggleRow:
+                    icon: I.repeat
+                    title: "Modo contínuo"
+                    subtitle: "Câmera registra cada código direto no setor atual"
+                    active: app.continuous
+                    on_active: app.continuous = self.active
+                ToggleRow:
+                    icon: I.vibrate
+                    title: "Vibrar"
+                    subtitle: "Vibra ao ler e ao encontrar duplicado"
+                    active: app.vibrate_on
+                    on_active: app.vibrate_on = self.active
+                ToggleRow:
+                    icon: I.volume
+                    title: "Som"
+                    subtitle: "Bipe de confirmação e alerta de duplicado"
+                    active: app.sound_on
+                    on_active: app.sound_on = self.active
+            GroupTitle:
+                text: "DADOS"
+            Card:
+                size_hint_y: None
+                height: self.minimum_height
+                padding: 0, dp(4)
+                ActionRow:
+                    icon: I.db_export
+                    title: "Exportar backup"
+                    subtitle: "Salva tudo em Downloads (arquivo .json)"
+                    on_release: app.export_backup()
+                ActionRow:
+                    icon: I.db_import
+                    title: "Importar backup"
+                    subtitle: "Restaura um arquivo NeonCart_Backup_*.json"
+                    on_release: app.import_backup()
+                ActionRow:
+                    icon: I.file_export
+                    title: "Exportar histórico"
+                    subtitle: "Planilha .xlsx com todos os scans"
+                    on_release: app.export_history()
+                ActionRow:
+                    icon: I.sweep
+                    title: "Limpar histórico"
+                    subtitle: "Não apaga a lista nem as listas salvas"
+                    danger: True
+                    on_release: app.clear_history()
+            GroupTitle:
+                text: "SOBRE"
+            Card:
+                size_hint_y: None
+                height: self.minimum_height
+                padding: dp(14), dp(12)
+                Label:
+                    text: "Neon Cart {}  ·  dados salvos só neste aparelho.\nFaça backup antes de desinstalar ou trocar de celular.".format(app.version)
+                    font_size: "12sp"
+                    color: C.purple300
+                    size_hint_y: None
+                    height: self.texture_size[1]
+                    text_size: self.width, None
+
+# ================================================================ linha da lista
 <EntryRow>:
     padding: dp(16), dp(12)
     spacing: dp(8)
@@ -458,8 +1236,8 @@
             color: (0.98, 0.66, 0.83, 0.8)
             opacity: 1 if root.observation else 0
             size_hint_y: None
-            height: (self.texture_size[1] + dp(16)) if root.observation else 0
-            text_size: self.width - dp(16), None
+            height: self.texture_size[1] if root.observation else 0
+            text_size: self.width, None
             padding: dp(8), dp(8)
             canvas.before:
                 Color:
@@ -472,7 +1250,9 @@
     BoxLayout:
         orientation: "vertical"
         size_hint_x: None
-        width: dp(44)
+        width: 0 if root.readonly else dp(44)
+        opacity: 0 if root.readonly else 1
+        disabled: root.readonly
         spacing: dp(4)
         IconButton:
             icon: I.edit
@@ -486,7 +1266,7 @@
             on_release: app.remove_entry(root.entry_id)
         Widget:
 
-# ---------------------------------------------------------------- alerta
+# ================================================================ alerta
 <DuplicateAlert>:
     padding: dp(14)
     spacing: dp(14)
@@ -544,7 +1324,7 @@
             valign: "middle"
             shorten: True
 
-# ---------------------------------------------------------------- janelas
+# ================================================================ janelas
 <ModalTitle@BoxLayout>:
     icon: ""
     text: ""
@@ -564,6 +1344,7 @@
         text_size: self.size
         halign: "left"
         valign: "middle"
+        shorten: True
 
 <CloseButton@IconButton>:
     icon: I.close
@@ -603,12 +1384,17 @@
         Line:
             rounded_rectangle: (self.x, self.y, self.width, self.height, dp(16))
 
+<ModalButton@Button>:
+    bold: True
+    background_normal: ""
+    background_color: (0.35, 0.11, 0.53, 0.5)
+    color: C.pink300
+
 <EditModal>:
     background: ""
     background_color: C.overlay
     overlay_color: (0, 0, 0, 0)
     size_hint: 1, 1
-    auto_dismiss: True
     AnchorLayout:
         ModalCard:
             BoxLayout:
@@ -658,7 +1444,7 @@
     AnchorLayout:
         ModalCard:
             ModalTitle:
-                icon: I.alert
+                icon: root.icon
                 text: root.title
             Label:
                 text: root.message
@@ -671,17 +1457,11 @@
                 size_hint_y: None
                 height: dp(50)
                 spacing: dp(10)
-                Button:
+                ModalButton:
                     text: "CANCELAR"
-                    bold: True
-                    background_normal: ""
-                    background_color: (0.35, 0.11, 0.53, 0.5)
-                    color: C.pink300
                     on_release: root.dismiss()
-                Button:
+                ModalButton:
                     text: root.confirm_text
-                    bold: True
-                    background_normal: ""
                     background_color: (0.86, 0.15, 0.15, 0.85)
                     color: C.white
                     on_release: root.confirm()
@@ -707,25 +1487,116 @@
                 size_hint_y: None
                 height: dp(50)
                 spacing: dp(10)
-                Button:
+                ModalButton:
                     text: "OK"
-                    bold: True
-                    background_normal: ""
-                    background_color: (0.35, 0.11, 0.53, 0.5)
-                    color: C.pink300
                     on_release: root.dismiss()
-                Button:
+                ModalButton:
                     text: root.action_text
-                    bold: True
                     disabled: not root.action_text
                     opacity: 1 if root.action_text else 0
                     size_hint_x: 1 if root.action_text else 0.001
-                    background_normal: ""
                     background_color: (0.86, 0.15, 0.47, 0.85)
                     color: C.white
                     on_release: root.action()
 
-# ---------------------------------------------------------------- câmera
+<PromptModal>:
+    background: ""
+    background_color: C.overlay
+    overlay_color: (0, 0, 0, 0)
+    size_hint: 1, 1
+    AnchorLayout:
+        ModalCard:
+            BoxLayout:
+                size_hint_y: None
+                height: dp(44)
+                ModalTitle:
+                    icon: root.icon
+                    text: root.title
+                CloseButton:
+                    on_release: root.dismiss()
+            SectionLabel:
+                text: root.label
+            NeonInput:
+                id: field
+                text: root.text
+                on_text_validate: root.confirm()
+            Widget:
+                size_hint_y: None
+                height: dp(8)
+            GradientButton:
+                icon: root.icon
+                text: root.confirm_text
+                texture: app.grad_main
+                on_release: root.confirm()
+
+<SessionModal>:
+    background: ""
+    background_color: C.overlay
+    overlay_color: (0, 0, 0, 0)
+    size_hint: 1, 1
+    AnchorLayout:
+        BoxLayout:
+            orientation: "vertical"
+            size_hint: None, None
+            width: min(Window.width - dp(32), dp(420))
+            height: Window.height * 0.8
+            padding: dp(4), dp(14), dp(4), dp(4)
+            spacing: dp(4)
+            canvas.before:
+                Color:
+                    rgba: C.card
+                RoundedRectangle:
+                    pos: self.pos
+                    size: self.size
+                    radius: [dp(16)]
+                Color:
+                    rgba: (0.93, 0.28, 0.6, 0.5)
+                Line:
+                    rounded_rectangle: (self.x, self.y, self.width, self.height, dp(16))
+            BoxLayout:
+                size_hint_y: None
+                height: dp(44)
+                padding: dp(14), 0, dp(10), 0
+                ModalTitle:
+                    icon: I.folders
+                    text: root.name
+                CloseButton:
+                    on_release: root.dismiss()
+            Label:
+                text: root.subtitle
+                font_name: "RobotoMono-Regular"
+                font_size: "11sp"
+                color: C.purple400
+                size_hint_y: None
+                height: dp(20)
+                text_size: self.size
+                halign: "left"
+                padding: dp(14), 0
+            RecycleView:
+                id: rv
+                viewclass: "EntryRow"
+                bar_width: dp(4)
+                bar_color: C.purple900
+                RecycleBoxLayout:
+                    orientation: "vertical"
+                    default_size_hint: 1, None
+                    size_hint_y: None
+                    height: self.minimum_height
+            BoxLayout:
+                size_hint_y: None
+                height: dp(52)
+                padding: dp(10), dp(4)
+                spacing: dp(8)
+                ModalButton:
+                    text: "[font={}]{}[/font]  COMPARTILHAR".format(app.icon_font, I.share)
+                    markup: True
+                    on_release: app.share_session(root.session_id)
+                ModalButton:
+                    text: "[font={}]{}[/font]  EXCEL".format(app.icon_font, I.download)
+                    markup: True
+                    on_release: app.export_session(root.session_id)
+
+# ================================================================ câmera
 <ScannerModal>:
     background: ""
     background_color: C.overlay
@@ -736,15 +1607,15 @@
         BoxLayout:
             orientation: "vertical"
             size_hint: None, None
-            width: min(Window.width - dp(32), dp(380))
+            width: min(Window.width - dp(32), dp(380), (Window.height - dp(320)) if root.continuous else Window.width)
             height: self.minimum_height
-            spacing: dp(20)
+            spacing: dp(16)
             BoxLayout:
                 size_hint_y: None
                 height: dp(44)
                 ModalTitle:
-                    icon: I.camera
-                    text: "SCAN CYBER"
+                    icon: I.repeat if root.continuous else I.camera
+                    text: "SCAN CONTÍNUO" if root.continuous else "SCAN CYBER"
                 CloseButton:
                     on_release: root.dismiss()
 
@@ -811,19 +1682,74 @@
                             rounded_rectangle: (0, 0, self.parent.width, self.parent.height, dp(24))
                             width: dp(1.5)
 
+            # Painel do modo contínuo
+            BoxLayout:
+                orientation: "vertical"
+                size_hint_y: None
+                height: dp(92) if root.continuous else 0
+                opacity: 1 if root.continuous else 0
+                padding: dp(14), dp(8)
+                spacing: dp(4)
+                canvas.before:
+                    Color:
+                        rgba: (C.green500[:3] + [0.12]) if root.last_ok and root.last_code else ((C.red500[:3] + [0.15]) if root.last_code else C.card)
+                    RoundedRectangle:
+                        pos: self.pos
+                        size: self.size
+                        radius: [dp(14)]
+                    Color:
+                        rgba: (C.green500 if root.last_ok else C.red500) if root.last_code else C.border
+                    Line:
+                        rounded_rectangle: (self.x, self.y, self.width, self.height, dp(14))
+                Label:
+                    text: "SETOR: [b]{}[/b]   ·   [b]{}[/b] registrados".format(escape_markup(root.division), root.count)
+                    markup: True
+                    font_size: "12sp"
+                    color: C.purple300
+                    text_size: self.size
+                    halign: "left"
+                    valign: "middle"
+                    shorten: True
+                BoxLayout:
+                    spacing: dp(8)
+                    IconLabel:
+                        icon: (I.ok if root.last_ok else I.error) if root.last_code else I.barcode
+                        font_size: "26sp"
+                        color: (C.green400 if root.last_ok else C.red500) if root.last_code else C.purple600
+                        pos_hint: {"center_y": .5}
+                    BoxLayout:
+                        orientation: "vertical"
+                        Label:
+                            text: root.last_code or "Aponte para um código"
+                            font_name: "RobotoMono-Regular"
+                            font_size: "16sp"
+                            color: C.pink100 if root.last_code else C.purple500
+                            text_size: self.size
+                            halign: "left"
+                            valign: "middle"
+                            shorten: True
+                        Label:
+                            text: root.last_message
+                            bold: True
+                            font_size: "11sp"
+                            color: (C.green400 if root.last_ok else C.red500)
+                            text_size: self.size
+                            halign: "left"
+                            valign: "middle"
+
             BoxLayout:
                 size_hint: None, None
-                height: dp(50)
+                height: dp(48)
                 width: self.minimum_width
                 pos_hint: {"center_x": .5}
-                spacing: dp(14)
+                spacing: dp(12)
                 Button:
                     text: "[font={}]{}[/font]  FLASH".format(app.icon_font, I.flash if root.torch_on else I.flash_off)
                     markup: True
                     font_name: "RobotoMono-Regular"
                     font_size: "14sp"
                     size_hint_x: None
-                    width: dp(130)
+                    width: dp(120)
                     background_normal: ""
                     background_color: (0.86, 0.15, 0.47, 0.4) if root.torch_on else (0.35, 0.11, 0.53, 0.4)
                     color: C.pink100 if root.torch_on else C.pink300
@@ -834,13 +1760,26 @@
                     font_name: "RobotoMono-Regular"
                     font_size: "14sp"
                     size_hint_x: None
-                    width: dp(130) if root.camera_total > 1 else 0
+                    width: dp(120) if root.camera_total > 1 else 0
                     opacity: 1 if root.camera_total > 1 else 0
                     disabled: root.camera_total < 2
                     background_normal: ""
                     background_color: (0.35, 0.11, 0.53, 0.4)
                     color: C.pink300
                     on_release: root.switch_camera()
+                Button:
+                    text: "[font={}]{}[/font]  CONCLUIR".format(app.icon_font, I.ok)
+                    markup: True
+                    font_name: "RobotoMono-Regular"
+                    font_size: "14sp"
+                    size_hint_x: None
+                    width: dp(130) if root.continuous else 0
+                    opacity: 1 if root.continuous else 0
+                    disabled: not root.continuous
+                    background_normal: ""
+                    background_color: (0.13, 0.55, 0.3, 0.5)
+                    color: C.white
+                    on_release: root.dismiss()
 
             Label:
                 text: "ALVO REQUERIDO: CÓDIGO DE BARRAS"
@@ -848,4 +1787,5 @@
                 font_size: "11sp"
                 color: C.purple400
                 size_hint_y: None
-                height: dp(20)
+                height: dp(20) if not root.continuous else 0
+                opacity: 1 if not root.continuous else 0

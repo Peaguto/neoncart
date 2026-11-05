@@ -10,6 +10,8 @@ from kivy.utils import platform
 IS_ANDROID = platform == "android"
 
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+JSON_MIME = "application/json"
+PICK_REQUEST_CODE = 0x4E43  # "NC"
 
 if IS_ANDROID:
     from android.runnable import run_on_ui_thread  # noqa: F401  (p4a)
@@ -207,3 +209,81 @@ def release_camera(camera_widget):
         except Exception:  # noqa: BLE001
             pass
     camera_widget._camera = None
+
+
+# --- vibração ----------------------------------------------------------
+def vibrate(ms=60):
+    if not IS_ANDROID:
+        return
+    try:
+        Context = autoclass("android.content.Context")
+        service = _activity().getSystemService(Context.VIBRATOR_SERVICE)
+        vibrator = cast("android.os.Vibrator", service)
+        if not vibrator.hasVibrator():
+            return
+        if BuildVersion.SDK_INT >= 26:
+            VibrationEffect = autoclass("android.os.VibrationEffect")
+            vibrator.vibrate(VibrationEffect.createOneShot(int(ms), VibrationEffect.DEFAULT_AMPLITUDE))
+        else:
+            vibrator.vibrate(int(ms))
+    except Exception as exc:  # noqa: BLE001 - vibração é opcional
+        print("NeonCart: vibração indisponível:", exc)
+
+
+# --- escolher arquivo (importar backup) ---------------------------------
+def pick_text_file(callback, mime="*/*"):
+    """Abre o seletor de arquivos e chama callback(texto_ou_None, nome).
+
+    No desktop, usa o backup mais recente em ~/Downloads.
+    """
+    if not IS_ANDROID:
+        import glob
+
+        folder = os.path.join(os.path.expanduser("~"), "Downloads")
+        files = sorted(glob.glob(os.path.join(folder, "NeonCart_Backup_*.json")),
+                       key=os.path.getmtime)
+        if not files:
+            callback(None, "")
+            return
+        with open(files[-1], "r", encoding="utf-8") as fh:
+            callback(fh.read(), os.path.basename(files[-1]))
+        return
+
+    from android import activity
+
+    def _on_result(request_code, result_code, data):
+        if request_code != PICK_REQUEST_CODE:
+            return
+        activity.unbind(on_activity_result=_on_result)
+        if result_code != -1 or data is None:  # -1 = RESULT_OK
+            callback(None, "")
+            return
+        uri = data.getData()
+        try:
+            callback(_read_uri_text(uri), uri.getLastPathSegment() or "")
+        except Exception as exc:  # noqa: BLE001
+            print("NeonCart: erro ao ler arquivo:", exc)
+            callback(None, "")
+
+    activity.bind(on_activity_result=_on_result)
+    intent = Intent(Intent.ACTION_OPEN_DOCUMENT)
+    intent.addCategory(Intent.CATEGORY_OPENABLE)
+    intent.setType(mime)
+    _activity().startActivityForResult(intent, PICK_REQUEST_CODE)
+
+
+def _read_uri_text(uri):
+    InputStreamReader = autoclass("java.io.InputStreamReader")
+    BufferedReader = autoclass("java.io.BufferedReader")
+    stream = _activity().getContentResolver().openInputStream(uri)
+    reader = BufferedReader(InputStreamReader(stream, "UTF-8"))
+    lines = []
+    try:
+        while True:
+            line = reader.readLine()
+            if line is None:
+                break
+            lines.append(line)
+    finally:
+        reader.close()
+    return "\n".join(lines)

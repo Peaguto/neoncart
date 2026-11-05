@@ -28,6 +28,9 @@ class C:
     red_bg = _hex("#1a0505")
     green400 = _hex("#4ade80")
     white = (1, 1, 1, 1)
+    green500 = _hex("#22c55e")
+    blue400 = _hex("#60a5fa")
+    amber400 = _hex("#fbbf24")
     overlay = (0, 0, 0, 0.95)
 
 
@@ -54,6 +57,29 @@ class I:
     search = "\U000F0349"
     edit = "\U000F03EB"
     save = "\U000F0193"
+    save_all = "\U000F0194"
+    cog = "\U000F0493"
+    chart = "\U000F0128"
+    folders = "\U000F0253"
+    archive = "\U000F003C"
+    undo = "\U000F054C"
+    eye = "\U000F0208"
+    restore = "\U000F006F"
+    file_import = "\U000F0220"
+    file_export = "\U000F021D"
+    ok = "\U000F05E0"
+    error = "\U000F0159"
+    keyboard = "\U000F030C"
+    barcode = "\U000F0072"
+    repeat = "\U000F0456"
+    vibrate = "\U000F0566"
+    volume = "\U000F057E"
+    info = "\U000F02FC"
+    bullets = "\U000F0279"
+    sweep = "\U000F05E9"
+    where = "\U000F0F07"
+    db_export = "\U000F095E"
+    db_import = "\U000F095D"
 
 
 def gradient_texture(*hex_colors, steps=64):
