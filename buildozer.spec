@@ -12,7 +12,8 @@ source.exclude_patterns = README.md, requirements-dev.txt
 version = 2.0.0
 
 # pyzbar usa a lib nativa libzbar (receita do python-for-android).
-requirements = python3,kivy==2.3.1,pyjnius,android,pillow,libzbar,pyzbar,openpyxl,et_xmlfile
+# filetype é dependência do Kivy 2.3.1 (kivy.core.image) que o p4a v2024.01.21 não inclui.
+requirements = python3,kivy==2.3.1,filetype,pyjnius,android,pillow,libzbar,pyzbar,openpyxl,et_xmlfile
 
 icon.filename = %(source.dir)s/assets/icon.png
 presplash.filename = %(source.dir)s/assets/presplash.png
