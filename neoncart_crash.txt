@@ -1,0 +1,57 @@
+Python 3.13.18
+
+Traceback (most recent call last):
+  File "/home/user/neoncart/main.py", line 79, in run
+    NeonCartApp().run()
+    ~~~~~~~~~~~~~~~~~^^
+  File "/home/user/.venv/lib/python3.13/site-packages/kivy/app.py", line 955, in run
+    self._run_prepare()
+    ~~~~~~~~~~~~~~~~~^^
+  File "/home/user/.venv/lib/python3.13/site-packages/kivy/app.py", line 925, in _run_prepare
+    root = self.build()
+  File "/tmp/claude-0/-home-user-neoncart/34286eb7-c47b-54a9-9d72-7092fdd9c61b/scratchpad/crash_drive.py", line 11, in boom
+    raise RuntimeError("falha simulada no build")
+RuntimeError: falha simulada no build
+
+--- log do Kivy ---
+[INFO   ] Logger: Record log in /root/.kivy/logs/kivy_26-11-09_0.txt
+[INFO   ] Kivy: v2.3.1
+[INFO   ] Kivy: Installed at "/home/user/.venv/lib/python3.13/site-packages/kivy/__init__.py"
+[INFO   ] Python: v3.13.18 (main, Oct 26 2026, 14:08:19) [Clang 23.1.3 ]
+[INFO   ] Python: Interpreter at "/home/user/neoncart/../.venv/bin/python"
+[INFO   ] Logger: Purge log fired. Processing...
+[INFO   ] Logger: Purge finished!
+[INFO   ] Factory: 195 symbols loaded
+[INFO   ] Image: Providers: img_tex, img_dds, img_sdl2, img_pil (img_ffpyplayer ignored)
+[ERROR  ] Input: MTDev is not supported by your version of linux
+Traceback (most recent call last):
+  File "/home/user/.venv/lib/python3.13/site-packages/kivy/input/providers/__init__.py", line 41, in <module>
+    import kivy.input.providers.mtdev
+  File "/home/user/.venv/lib/python3.13/site-packages/kivy/input/providers/mtdev.py", line 94, in <module>
+    from kivy.lib.mtdev import Device, \
+    ...<5 lines>...
+        MTDEV_ABS_TOUCH_MAJOR, MTDEV_TYPE_EV_SYN
+  File "/home/user/.venv/lib/python3.13/site-packages/kivy/lib/mtdev.py", line 30, in <module>
+    libmtdev = cdll.LoadLibrary('libmtdev.so.1')
+  File "/usr/local/lib/python3.13/ctypes/__init__.py", line 482, in LoadLibrary
+    return self._dlltype(name)
+           ~~~~~~~~~~~~~^^^^^^
+  File "/usr/local/lib/python3.13/ctypes/__init__.py", line 361, in __init__
+    self._handle = self._load_library(name, mode, handle, winmode)
+                   ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.13/ctypes/__init__.py", line 403, in _load_library
+    return _dlopen(name, mode)
+OSError: libmtdev.so.1: cannot open shared object file: No such file or directory
+[INFO   ] Window: Provider: sdl2
+[INFO   ] GL: Using the "OpenGL" graphics system
+[INFO   ] GL: Backend used <sdl2>
+[INFO   ] GL: OpenGL version <b'4.5 (Compatibility Profile) Mesa 25.2.8-0ubuntu0.24.04.4'>
+[INFO   ] GL: OpenGL vendor <b'Mesa'>
+[INFO   ] GL: OpenGL renderer <b'llvmpipe (LLVM 20.1.2, 256 bits)'>
+[INFO   ] GL: OpenGL parsed version: 4, 5
+[INFO   ] GL: Shading version <b'4.50'>
+[INFO   ] GL: Texture max size <16384>
+[INFO   ] GL: Texture max units <32>
+[INFO   ] Window: auto add sdl2 input provider
+[INFO   ] Window: virtual keyboard not allowed, single mode, not docked
+[INFO   ] Text: Provider: sdl2

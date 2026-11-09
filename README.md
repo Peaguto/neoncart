@@ -38,7 +38,8 @@ Dados salvos em `neoncart.json` na pasta privada do app (migra o `entries.json` 
 
 | Arquivo | Conteúdo |
 |---|---|
-| `main.py` | App Kivy, telas e ações |
+| `main.py` | Ponto de entrada; mostra a tela de erro se o app falhar ao abrir |
+| `neoncart_app.py` | App Kivy, telas e ações |
 | `neoncart.kv` | Layout e tema neon |
 | `storage.py` | Dados: lista, histórico, listas salvas, resumo, backup (sem Kivy) |
 | `exporter.py` | Planilhas `.xlsx`, backup `.json` e textos para compartilhar |
