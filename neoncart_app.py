@@ -1,13 +1,15 @@
-"""Neon Cart - baixa de carrinhos (versão Android em Python/Kivy)."""
+"""Material Circulante - Cart (baixa de carrinhos) e Porta Vasos (devolução de material)."""
 
 import os
 import tempfile
+from datetime import date, timedelta
 
 from kivy.animation import Animation
 from kivy.app import App
 from kivy.clock import Clock, mainthread
 from kivy.core.text import Label as CoreLabel
 from kivy.core.text.markup import MarkupLabel
+from kivy.core.clipboard import Clipboard
 from kivy.core.window import Window
 from kivy.graphics import Color, Rectangle
 from kivy.metrics import dp, sp
@@ -24,7 +26,11 @@ from kivy.uix.screenmanager import Screen
 from kivy.uix.textinput import TextInput
 
 import exporter
+import photos as ph
 import platform_utils as pu
+from photo_capture import PhotoModal
+import portavasos as pv
+import reports
 from scanner import ScannerModal
 from storage import (ACTION_LABELS, ADD, DELETE, DUPLICATE, EDIT, SCAN, BackupError,
                      Database, DuplicateCodeError, local_datetime, parse_ts)
@@ -32,7 +38,8 @@ from theme import ICON_FONT, C, I, gradient_texture
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 ICON_FONT_PATH = os.path.join(APP_DIR, ICON_FONT)
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.1.0"
+APP_NAME = "MATERIAL CIRCULANTE"
 
 # Cor e ícone de cada ação do histórico
 ACTION_STYLE = {
@@ -47,12 +54,32 @@ HISTORY_FILTERS = [
     ("DUPLICADOS", DUPLICATE), ("EDITADOS", EDIT), ("EXCLUÍDOS", DELETE),
 ]
 SCREEN_TITLES = {
-    "home": "CONTROLE DE ESTOQUE",
-    "history": "HISTÓRICO DE SCANS",
-    "saved": "LISTAS SALVAS",
-    "summary": "RESUMO",
+    "menu": "MENU INICIAL",
+    "home": "CART · CONTROLE DE ESTOQUE",
+    "history": "CART · HISTÓRICO DE SCANS",
+    "saved": "CART · LISTAS SALVAS",
+    "summary": "CART · RESUMO",
     "settings": "AJUSTES",
+    "pv_folders": "PORTA VASOS · PASTAS",
+    "pv_folder": "PORTA VASOS · PASTA",
+    "pv_new": "PORTA VASOS · CLIENTE NA PASTA",
+    "pv_summary": "PORTA VASOS · RESUMO",
 }
+# Módulo de cada tela (AJUSTES fica no módulo em que foi aberto)
+SCREEN_MODULE = {
+    "menu": "menu",
+    "home": "cart", "history": "cart", "saved": "cart", "summary": "cart",
+    "pv_folders": "pv", "pv_folder": "pv", "pv_new": "pv", "pv_summary": "pv",
+}
+MODULE_HOME = {"cart": "home", "pv": "pv_folders"}
+# Para onde o "voltar" leva a partir de telas internas
+SCREEN_PARENT = {"pv_new": "pv_folder", "pv_folder": "pv_folders"}
+# Cores do status das pastas (texto, fundo)
+PV_STATUS_STYLE = {
+    pv.WAITING: (C.amber400, (0.98, 0.75, 0.14, 0.15)),
+    pv.RETURNED: (C.green400, (0.29, 0.87, 0.5, 0.15)),
+}
+PV_FILTERS = [("TODAS", ""), ("AGUARDANDO", pv.WAITING), ("DEVOLVIDAS", pv.RETURNED)]
 
 
 # --- widgets básicos -----------------------------------------------------
@@ -80,6 +107,7 @@ class NavButton(ButtonBehavior, BoxLayout):
     icon = StringProperty("")
     text = StringProperty("")
     screen = StringProperty("")
+    also = StringProperty("")  # outras telas em que o botão fica aceso
     badge = NumericProperty(0)
 
 
@@ -150,6 +178,42 @@ class NeonInput(TextInput):
         return super().insert_text(substring, from_undo=from_undo)
 
 
+class MenuCard(ButtonBehavior, BoxLayout):
+    icon = StringProperty("")
+    title = StringProperty("")
+    subtitle = StringProperty("")
+    badge = StringProperty("")
+
+
+class ItemStepper(BoxLayout):
+    """Quantidade de um item da devolução: [-] [número] [+]."""
+
+    name = StringProperty("")
+    value = NumericProperty(0)
+
+    def step(self, delta):
+        self.value = max(0, min(pv.MAX_QTY, int(self.value) + delta))
+
+    def set_text(self, text):
+        try:
+            value = int(text) if text.strip() else 0
+        except ValueError:
+            return
+        value = max(0, min(pv.MAX_QTY, value))
+        if value != self.value:
+            self.value = value
+
+    def on_value(self, *args):
+        field = self.ids.get("qty")
+        if field is not None:
+            text = str(int(self.value)) if self.value else ""
+            if field.text != text:
+                field.text = text
+        app = App.get_running_app()
+        if app is not None:
+            app.pv_update_form_total()
+
+
 # --- linhas das listas ---------------------------------------------------
 class EntryRow(RecycleDataViewBehavior, BoxLayout):
     entry_id = StringProperty("")
@@ -179,6 +243,88 @@ class SessionRow(RecycleDataViewBehavior, BoxLayout):
     detail = StringProperty("")
 
 
+class StatusPill(Label):
+    status_color = ListProperty(C.amber400)
+
+
+class FolderRow(RecycleDataViewBehavior, ButtonBehavior, BoxLayout):
+    folder_id = StringProperty("")
+    name = StringProperty("")
+    period = StringProperty("")
+    status = StringProperty("")
+    status_label = StringProperty("")
+    status_color = ListProperty(C.amber400)
+    detail = StringProperty("")
+
+
+class ReturnRow(RecycleDataViewBehavior, BoxLayout):
+    record_id = StringProperty("")
+    number = NumericProperty(0)
+    client = StringProperty("")
+    dates = StringProperty("")
+    items = StringProperty("")
+    total = NumericProperty(0)
+    thumbs = ListProperty([])     # caminhos das miniaturas (até 4)
+    photo_count = NumericProperty(0)
+    seq = StringProperty("")      # "2ª DEVOLUÇÃO" quando o cliente repete na pasta
+
+
+class PhotoThumb(ButtonBehavior, BoxLayout):
+    """Miniatura de foto clicável (abre o visualizador)."""
+
+    source = StringProperty("")
+    index = NumericProperty(0)
+    extra = NumericProperty(0)   # "+N" quando há mais fotos do que miniaturas
+    record_id = StringProperty("")
+
+
+class PhotoViewer(ModalView):
+    """Foto em tela cheia: anterior/próxima, girar e excluir."""
+
+    names = ListProperty([])
+    index = NumericProperty(0)
+    photos_dir = StringProperty("")
+    title = StringProperty("")
+    source = StringProperty("")
+    __events__ = ("on_change",)
+
+    def on_change(self, names):
+        pass
+
+    def on_open(self):
+        self._show()
+
+    def _show(self):
+        if not self.names:
+            self.dismiss()
+            return
+        self.index = max(0, min(self.index, len(self.names) - 1))
+        self.source = ph.photo_path(self.photos_dir, self.names[self.index])
+        img = self.ids.get("image")
+        if img is not None:
+            img.source = self.source
+            img.reload()
+
+    def step(self, delta):
+        if self.names:
+            self.index = (self.index + delta) % len(self.names)
+            self._show()
+
+    def rotate(self):
+        if self.names and ph.rotate(self.photos_dir, self.names[self.index]):
+            self._show()
+            self.dispatch("on_change", list(self.names))
+
+    def delete(self):
+        if not self.names:
+            return
+        names = list(self.names)
+        names.pop(self.index)
+        self.names = names
+        self.dispatch("on_change", list(names))
+        self._show()
+
+
 class DuplicateAlert(BoxLayout):
     code = StringProperty("")
 
@@ -196,7 +342,27 @@ class Snackbar(BoxLayout):
 
 
 # --- telas ---------------------------------------------------------------
+class MenuScreen(Screen):
+    pass
+
+
 class HomeScreen(Screen):
+    pass
+
+
+class PvFoldersScreen(Screen):
+    pass
+
+
+class PvFolderScreen(Screen):
+    pass
+
+
+class PvNewScreen(Screen):
+    pass
+
+
+class PvSummaryScreen(Screen):
     pass
 
 
@@ -278,6 +444,115 @@ class PromptModal(ModalView):
             self.confirm_cb(value)
 
 
+class FolderModal(ModalView):
+    """Criar / editar pasta semanal (nome, início e fim)."""
+
+    icon = StringProperty(I.folder_plus)
+    title = StringProperty("")
+    confirm_text = StringProperty("SALVAR")
+    folder_id = StringProperty("")
+    error = StringProperty("")
+    __events__ = ("on_save",)
+
+    def on_save(self, *args):
+        pass
+
+    def set_week(self, weeks_offset):
+        start, end = pv.week_bounds(date.today() + timedelta(weeks=weeks_offset))
+        self.ids.start.text = pv.format_date(start)
+        self.ids.end.text = pv.format_date(end)
+        if not self.folder_id:
+            self.ids.name.text = ""
+
+    def name_hint(self, start_text, end_text):
+        start = pv.parse_date(start_text)
+        end = pv.parse_date(end_text) if end_text.strip() else None
+        if start is None:
+            return "Ex: SEMANA 08.11 - 14.11"
+        return pv.default_folder_name(start, end or start + timedelta(days=6))
+
+    def submit(self):
+        self.error = ""
+        self.dispatch("on_save", self.ids.name.text, self.ids.start.text, self.ids.end.text)
+
+
+class ClientPickRow(RecycleDataViewBehavior, ButtonBehavior, BoxLayout):
+    name = StringProperty("")
+    detail = StringProperty("")
+
+
+class ClientPickerModal(ModalView):
+    """Lista de clientes: buscar, escolher, cadastrar novo ou remover da lista."""
+
+    query = StringProperty("")
+    can_add = BooleanProperty(False)
+    total = NumericProperty(0)
+    __events__ = ("on_pick",)
+
+    def on_pick(self, name):
+        pass
+
+    def on_open(self):
+        self.refresh()
+        Clock.schedule_once(lambda dt: setattr(self.ids.search, "focus", True), 0.2)
+
+    def on_query(self, *args):
+        self.refresh()
+
+    def refresh(self):
+        app = App.get_running_app()
+        db = app.db
+        uses = {}
+        for f in db.folders:
+            for r in f["records"]:
+                uses[r["client"]] = uses.get(r["client"], 0) + 1
+        names = db.search_clients(self.query)
+        self.total = len(db.client_list)
+        self.ids.rv.data = [{"name": n, "detail": "{} devolução(ões)".format(uses[n])
+                             if uses.get(n) else "sem devoluções ainda"} for n in names]
+        typed = pv.normalize_client(self.query)
+        self.can_add = bool(typed) and typed not in db.client_list
+
+    def pick(self, name):
+        self.dispatch("on_pick", name)
+        self.dismiss()
+
+    def add_new(self):
+        name = App.get_running_app().db.add_client(self.query)
+        if name:
+            self.pick(name)
+
+    def remove(self, name):
+        app = App.get_running_app()
+
+        def _do():
+            app.db.remove_client(name)
+            app.refresh_pv()
+            self.refresh()
+
+        app.confirm("REMOVER DA LISTA",
+                    "Tirar {} da lista de clientes?\nAs devoluções já registradas "
+                    "continuam nas pastas.".format(name), _do, "REMOVER")
+
+
+class ChoiceModal(ModalView):
+    """Lista de opções (ex.: compartilhar como texto, PDF ou Excel)."""
+
+    title = StringProperty("")
+    subtitle = StringProperty("")
+    icon = StringProperty(I.share)
+
+    def add_choice(self, icon, title, subtitle, callback):
+        row = ActionRow(icon=icon, title=title, subtitle=subtitle)
+
+        def _go(*args):
+            self.dismiss()
+            callback()
+
+        row.bind(on_release=_go)
+        self.ids.choices.add_widget(row)
+
+
 class SessionModal(ModalView):
     """Mostra os carrinhos de uma lista salva."""
 
@@ -292,7 +567,8 @@ class Root(FloatLayout):
 
 # --- app -----------------------------------------------------------------
 class NeonCartApp(App):
-    title = "Neon Cart"
+    title = "Material Circulante"
+    app_name = APP_NAME
     icon_font = ICON_FONT_PATH
     version = APP_VERSION
     C = C
@@ -314,8 +590,33 @@ class NeonCartApp(App):
     # resumo
     summary = DictProperty({})
     # navegação
-    current_screen = StringProperty("home")
-    screen_title = StringProperty(SCREEN_TITLES["home"])
+    current_screen = StringProperty("menu")
+    screen_title = StringProperty(SCREEN_TITLES["menu"])
+    module = StringProperty("menu")
+    # porta vasos
+    pv_filters = ListProperty(PV_FILTERS)
+    pv_filter = StringProperty("")
+    pv_folders_total = NumericProperty(0)
+    pv_folders_visible = NumericProperty(0)
+    pv_waiting_count = NumericProperty(0)
+    pv_folder_id = StringProperty("")
+    pv_folder_name = StringProperty("")
+    pv_folder_period = StringProperty("")
+    pv_folder_status = StringProperty(pv.WAITING)
+    pv_folder_status_date = StringProperty("")
+    pv_folder_count = NumericProperty(0)
+    pv_folder_clients = NumericProperty(0)
+    pv_folder_total = NumericProperty(0)
+    pv_sum_filter = StringProperty("")
+    pv_sum_folders = NumericProperty(0)
+    pv_sum_total = NumericProperty(0)
+    pv_sum_clients = NumericProperty(0)
+    pv_editing = StringProperty("")
+    pv_form_photos = ListProperty([])
+    pv_form_carts = ListProperty([])
+    pv_client_note = StringProperty("")
+    pv_form_total = NumericProperty(0)
+    pv_recent_clients = ListProperty([])
     # ajustes
     continuous = BooleanProperty(False)
     vibrate_on = BooleanProperty(True)
@@ -339,7 +640,13 @@ class NeonCartApp(App):
         self._sounds = {}
         self._snack_event = None
         self.summary = self.db.summary()
+        try:  # fotos de cadastros cancelados / registros excluídos
+            self.db.purge_photos()
+        except Exception as exc:  # noqa: BLE001
+            print("NeonCart: limpeza de fotos:", exc)
         self.root = Root()
+        self._build_steppers()
+        self.pv_reset_form()
         self.refresh_all()
         Window.bind(width=lambda *a: Clock.schedule_once(lambda dt: self.refresh_list(), 0))
         Window.bind(on_keyboard=self._on_keyboard)
@@ -357,12 +664,19 @@ class NeonCartApp(App):
     def screen_ids(self, name):
         return self.ids.sm.get_screen(name).ids
 
+    def chip_width(self, text, font_size="12sp"):
+        """Largura do Chip para os dados do RecycleView (senão ele usa 100x100)."""
+        lbl = CoreLabel(text=text, font_size=sp(float(font_size.rstrip("sp"))), bold=True)
+        lbl.refresh()
+        return lbl.texture.size[0] + dp(24)
+
     # --- navegação -----------------------------------------------------
     def go(self, name):
         if name == self.current_screen:
             return
         self.ids.sm.current = name
         self.current_screen = name
+        self.module = SCREEN_MODULE.get(name, self.module)
         self.screen_title = SCREEN_TITLES.get(name, "")
         self.hide_snackbar()
         if name == "history":
@@ -371,12 +685,30 @@ class NeonCartApp(App):
             self.refresh_sessions()
         elif name == "summary":
             self.refresh_summary()
+        elif name in ("pv_folders", "pv_folder", "pv_summary", "menu"):
+            self.refresh_pv()
+
+    def go_back(self):
+        """Voltar: tela interna -> tela do módulo -> início do módulo -> menu inicial."""
+        if self.current_screen == "menu":
+            return False
+        parent = SCREEN_PARENT.get(self.current_screen)
+        if parent:
+            if self.current_screen == "pv_new":
+                self.pv_reset_form()
+            self.go(parent)
+            return True
+        home = MODULE_HOME.get(self.module)
+        if home and self.current_screen != home:
+            self.go(home)
+        else:
+            self.go("menu")
+        return True
 
     def _on_keyboard(self, window, key, *args):
         # 27 = botão voltar do Android / Esc
-        if key == 27 and self.current_screen != "home":
-            self.go("home")
-            return True
+        if key == 27:
+            return self.go_back()
         return False
 
     # --- ajustes -------------------------------------------------------
@@ -422,6 +754,7 @@ class NeonCartApp(App):
         self.refresh_history()
         self.refresh_sessions()
         self.refresh_summary()
+        self.refresh_pv()
 
     def _row_height(self, observation, width):
         # padding + código + setor + 3 espaçamentos do BoxLayout (6dp cada)
@@ -849,8 +1182,11 @@ class NeonCartApp(App):
     def share_summary(self):
         self._share(exporter.summary_text(self.db.summary()))
 
-    def _export_file(self, filename, mime, writer):
-        """Gera o arquivo com writer(caminho) e copia para Downloads."""
+    def _export_file(self, filename, mime, writer, after=None):
+        """Gera o arquivo com writer(caminho) e copia para Downloads.
+
+        after(local, uri), se informado, substitui o aviso de "EXPORTADO".
+        """
         pu.request_storage_permission()
         tmp_dir = tempfile.mkdtemp(dir=self.user_data_dir)
         tmp_path = os.path.join(tmp_dir, filename)
@@ -864,6 +1200,9 @@ class NeonCartApp(App):
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
             os.rmdir(tmp_dir)
+        if after is not None:
+            after(where, uri)
+            return
         if uri is not None:
             self.show_info("EXPORTADO", "Arquivo salvo em:\n" + where, "COMPARTILHAR",
                            lambda: pu.share_file(uri, mime), icon=I.download)
@@ -875,6 +1214,657 @@ class NeonCartApp(App):
         if entries:
             self._export_file(exporter.report_filename(), pu.XLSX_MIME,
                               lambda p: exporter.export_xlsx(entries, p))
+
+    # --- porta vasos: formulário do cliente ------------------------------
+    def _build_steppers(self):
+        grid = self.screen_ids("pv_new").items_grid
+        grid.clear_widgets()
+        self._steppers = {}
+        for name in pv.ITEMS:
+            if name == pv.CART_ITEM:  # carrinhos entram pelo código (bipar/digitar)
+                continue
+            stepper = ItemStepper(name=name)
+            self._steppers[name] = stepper
+            grid.add_widget(stepper)
+
+    def pv_update_form_total(self):
+        steppers = getattr(self, "_steppers", {})
+        self.pv_form_total = (sum(int(s.value) for s in steppers.values())
+                              + len(self.pv_form_carts))
+
+    def on_pv_form_carts(self, *args):
+        self.pv_update_form_total()
+        if self.root is None:
+            return
+        box = self.screen_ids("pv_new").cart_chips
+        box.clear_widgets()
+        for code in self.pv_form_carts:
+            text = "[font={}]{}[/font] {}  [font={}]{}[/font]".format(
+                ICON_FONT_PATH, I.cart, code, ICON_FONT_PATH, I.close)
+            chip = Chip(text=text, markup=True, active=True, font_size=sp(13))
+            chip.bind(on_release=lambda c, code=code: self.pv_remove_cart(code))
+            box.add_widget(chip)
+
+    # --- carrinhos (bipar ou digitar o código) ---------------------------
+    def _pv_cart_problem(self, code):
+        """Mensagem se o código não pode entrar (repetido), senão ""."""
+        if code in self.pv_form_carts:
+            return "Carrinho {} já está nesta devolução.".format(code)
+        folder = self.pv_folder()
+        if folder is not None:
+            other = pv.find_cart(folder, code, exclude_id=self.pv_editing or None)
+            if other is not None:
+                return "Carrinho {} já registrado nesta pasta para {} ({}).".format(
+                    code, other["client"], pv.format_date(other["date"]))
+        return ""
+
+    def pv_add_cart(self, text=None):
+        """Adiciona o código digitado no campo (ou o texto informado)."""
+        field = self.screen_ids("pv_new").cart_code
+        code = pv.normalize_cart_code(field.text if text is None else text)
+        if not code:
+            self._focus(field)
+            return False
+        problem = self._pv_cart_problem(code)
+        if problem:
+            self.feedback(False)
+            self.show_duplicate(code)
+            self.show_snackbar(problem, duration=4)
+            field.text = ""
+            return False
+        self.pv_form_carts = list(self.pv_form_carts) + [code]
+        field.text = ""
+        self.feedback(True)
+        self._focus(field)
+        return True
+
+    def pv_remove_cart(self, code):
+        carts = list(self.pv_form_carts)
+        if code in carts:
+            carts.remove(code)
+            self.pv_form_carts = carts
+
+    def pv_scan_carts(self):
+        """Câmera em modo contínuo: cada código lido entra na devolução."""
+        client = self.screen_ids("pv_new").client.text.strip().upper()
+        modal = ScannerModal(continuous=True, division=client, target_label="CLIENTE")
+        modal.bind(on_result=self._pv_cart_scanned)
+        modal.open()
+
+    def _pv_cart_scanned(self, modal, code):
+        code = pv.normalize_cart_code(code)
+        problem = self._pv_cart_problem(code)
+        if problem:
+            modal.show_feedback(code, False, "JÁ REGISTRADO")
+            self.feedback(False)
+            return
+        self.pv_form_carts = list(self.pv_form_carts) + [code]
+        modal.show_feedback(code, True, "CARRINHO ADICIONADO")
+        self.feedback(True)
+
+    # --- cliente: digitar ou escolher na lista ---------------------------
+    def pv_client_changed(self, text):
+        returns = self.db.client_returns(self.pv_folder_id, text, exclude_id=self.pv_editing)
+        if not returns:
+            self.pv_client_note = ""
+            return
+        days = ", ".join("{} ({} itens)".format(pv.format_date(r["date"], short=True),
+                                                pv.record_total(r)) for r in returns)
+        self.pv_client_note = ("{} já tem {} devolução(ões) nesta pasta: {}. Esta será "
+                               "registrada como nova devolução, com a data abaixo.".format(
+                                   pv.normalize_client(text), len(returns), days))
+
+    def pv_open_client_list(self):
+        modal = ClientPickerModal()
+        modal.ids.search.text = self.screen_ids("pv_new").client.text.strip()
+        modal.bind(on_pick=lambda m, name: self.pv_pick_client(name))
+        self._client_picker = modal
+        modal.open()
+
+    def _pick_from_row(self, row):
+        picker = getattr(self, "_client_picker", None)
+        if picker is not None:
+            picker.pick(row.name)
+
+    def _remove_from_row(self, row):
+        picker = getattr(self, "_client_picker", None)
+        if picker is not None:
+            picker.remove(row.name)
+
+    def pv_reset_form(self):
+        ids = self.screen_ids("pv_new")
+        ids.client.text = ""
+        ids.date.text = pv.format_date(date.today())
+        for stepper in self._steppers.values():
+            stepper.value = 0
+        self.pv_editing = ""
+        self.pv_form_photos = []
+        self.pv_form_carts = []
+        ids.cart_code.text = ""
+        self.pv_client_note = ""
+        self.pv_update_form_total()
+
+    # --- fotos do formulário --------------------------------------------
+    def pv_take_photo(self):
+        client = self.screen_ids("pv_new").client.text.strip().upper()
+        modal = PhotoModal(photos_dir=self.db.photos_dir, client=client)
+        modal.bind(on_photo=lambda m, name: self._pv_add_photos([name], quiet=True))
+        modal.bind(on_dismiss=self._pv_camera_closed)
+        modal.open()
+
+    def _pv_camera_closed(self, modal):
+        if modal.count:
+            self.show_snackbar("{} foto(s) adicionada(s)".format(modal.count), duration=2)
+
+    def pv_pick_photos(self):
+        try:
+            pu.pick_images(self._pv_picked)
+        except Exception as exc:  # noqa: BLE001
+            self.show_info("ERRO", "Não foi possível abrir a galeria.\n{}".format(exc))
+
+    @mainthread
+    def _pv_picked(self, blobs):
+        names = []
+        for data in blobs:
+            try:
+                names.append(ph.save_bytes(data, self.db.photos_dir))
+            except Exception as exc:  # noqa: BLE001
+                print("NeonCart: foto inválida:", exc)
+        if names:
+            self._pv_add_photos(names)
+        elif blobs:
+            self.show_info("FOTO INVÁLIDA", "Não foi possível abrir a imagem escolhida.",
+                           icon=I.camera)
+
+    def _pv_add_photos(self, names, quiet=False):
+        self.pv_form_photos = list(self.pv_form_photos) + list(names)
+        if not quiet:
+            self.show_snackbar("{} foto(s) adicionada(s)".format(len(names)), duration=2)
+
+    def on_pv_form_photos(self, *args):
+        if self.root is None:
+            return
+        strip = self.screen_ids("pv_new").photo_strip
+        strip.clear_widgets()
+        folder = self.db.photos_dir
+        for i, name in enumerate(self.pv_form_photos):
+            strip.add_widget(PhotoThumb(source=ph.thumb_path(folder, name), index=i))
+
+    def pv_open_photo(self, thumb):
+        """Abre o visualizador a partir de uma miniatura (formulário ou lista)."""
+        if thumb.record_id:
+            _folder, record = self.db.find_record(thumb.record_id)
+            if record is None:
+                return
+            viewer = PhotoViewer(names=list(record["photos"]), index=thumb.index,
+                                 photos_dir=self.db.photos_dir, title=record["client"])
+
+            def _changed(v, names, rid=thumb.record_id):
+                self.db.set_record_photos(rid, names)
+                self.refresh_pv()
+
+            viewer.bind(on_change=_changed)
+        else:
+            viewer = PhotoViewer(names=list(self.pv_form_photos), index=thumb.index,
+                                 photos_dir=self.db.photos_dir, title="FOTOS DO CLIENTE")
+            viewer.bind(on_change=lambda v, names: setattr(self, "pv_form_photos", names))
+        viewer.open()
+
+    def pv_set_date(self, days_ago=0):
+        self.screen_ids("pv_new").date.text = pv.format_date(
+            date.today() - timedelta(days=days_ago))
+
+    def pv_pick_client(self, client):
+        self.screen_ids("pv_new").client.text = client
+
+    def pv_new_record(self):
+        """Abre o formulário para adicionar um cliente na pasta aberta."""
+        if not self.db.get_folder(self.pv_folder_id):
+            return
+        self.pv_reset_form()
+        self.go("pv_new")
+        self._focus(self.screen_ids("pv_new").client)
+
+    def pv_submit(self):
+        ids = self.screen_ids("pv_new")
+        items = {name: int(s.value) for name, s in self._steppers.items()}
+        editing = self.pv_editing
+        photos = list(self.pv_form_photos)
+        carts = list(self.pv_form_carts)
+        if ids.cart_code.text.strip():  # código digitado e não adicionado
+            if not self.pv_add_cart():
+                return
+            carts = list(self.pv_form_carts)
+        try:
+            if editing:
+                record = self.db.update_record(editing, ids.client.text, ids.date.text, items,
+                                               photos=photos, carts=carts)
+            else:
+                record = self.db.add_record(self.pv_folder_id, ids.client.text, ids.date.text,
+                                            items, photos=photos, carts=carts)
+        except pv.PvError as exc:
+            self.feedback(False)
+            self.show_info("CONFIRA OS DADOS", str(exc), icon=I.flower)
+            return
+        self.pv_reset_form()
+        self.refresh_pv()
+        self.go("pv_folder")
+        if record is None:  # registro apagado enquanto era editado
+            return
+        self.feedback(True)
+        if editing:
+            self.show_snackbar("{} atualizado".format(record["client"]))
+        else:
+            self.show_snackbar("{} registrado ({} itens)".format(
+                record["client"], pv.record_total(record)), "+ OUTRO", self.pv_new_record)
+
+    def pv_cancel_edit(self):
+        self.pv_reset_form()
+        self.go("pv_folder")
+
+    def pv_edit(self, record_id):
+        folder, record = self.db.find_record(record_id)
+        if record is None:
+            return
+        self.pv_folder_id = folder["id"]
+        ids = self.screen_ids("pv_new")
+        ids.client.text = record["client"]
+        ids.date.text = pv.format_date(record["date"])
+        for name, stepper in self._steppers.items():
+            stepper.value = record["items"].get(name, 0)
+        self.pv_editing = record_id
+        self.pv_form_photos = list(record.get("photos", []))
+        self.pv_form_carts = list(record.get("carts", []))
+        self.pv_client_changed(record["client"])
+        self.pv_update_form_total()
+        self.refresh_pv()
+        self.go("pv_new")
+
+    def pv_remove(self, record_id):
+        folder, record, index = self.db.remove_record(record_id)
+        if record is None:
+            return
+        if self.pv_editing == record_id:
+            self.pv_reset_form()
+        self.refresh_pv()
+
+        def _undo():
+            if self.db.restore_record(folder["id"], record, index):
+                self.refresh_pv()
+
+        self.show_snackbar("{} excluído da pasta".format(record["client"]), "DESFAZER", _undo)
+
+    # --- porta vasos: pastas ---------------------------------------------
+    def pv_folder(self):
+        return self.db.get_folder(self.pv_folder_id)
+
+    def pv_open_folder(self, folder_id):
+        if self.db.get_folder(folder_id) is None:
+            return
+        self.pv_folder_id = folder_id
+        self.refresh_pv()
+        self.go("pv_folder")
+
+    def pv_new_folder(self):
+        start, end = pv.week_bounds(date.today())
+        modal = FolderModal(title="NOVA PASTA", confirm_text="CRIAR PASTA", icon=I.folder_plus)
+        modal.ids.start.text = pv.format_date(start)
+        modal.ids.end.text = pv.format_date(end)
+        modal.bind(on_save=self._save_new_folder)
+        modal.open()
+
+    def _save_new_folder(self, modal, name, start, end):
+        try:
+            folder = self.db.add_folder(name, start, end)
+        except pv.PvError as exc:
+            modal.error = str(exc)
+            return
+        modal.dismiss()
+        self.pv_filter = ""
+        self.pv_open_folder(folder["id"])
+        self.show_snackbar("Pasta {} criada".format(folder["name"]), "+ CLIENTE",
+                           self.pv_new_record)
+
+    def pv_edit_folder(self):
+        folder = self.pv_folder()
+        if folder is None:
+            return
+        modal = FolderModal(title="EDITAR PASTA", confirm_text="SALVAR", icon=I.edit,
+                            folder_id=folder["id"])
+        modal.ids.name.text = folder["name"]
+        modal.ids.start.text = pv.format_date(folder["start"])
+        modal.ids.end.text = pv.format_date(folder["end"])
+        modal.bind(on_save=self._save_edit_folder)
+        modal.open()
+
+    def _save_edit_folder(self, modal, name, start, end):
+        try:
+            self.db.update_folder(modal.folder_id, name, start, end)
+        except pv.PvError as exc:
+            modal.error = str(exc)
+            return
+        modal.dismiss()
+        self.refresh_pv()
+
+    def pv_toggle_status(self, folder_id=None):
+        folder = self.db.get_folder(folder_id or self.pv_folder_id)
+        if folder is None:
+            return
+        new = pv.WAITING if folder["status"] == pv.RETURNED else pv.RETURNED
+
+        def _do():
+            self.db.set_folder_status(folder["id"], new)
+            self.refresh_pv()
+            self.feedback(True)
+            self.show_snackbar("{}: {}".format(folder["name"], pv.STATUS_LABELS[new]), duration=3)
+
+        if new == pv.RETURNED:
+            self.confirm("MARCAR COMO DEVOLVIDO",
+                         "Confirmar que a pasta {} ({} itens) foi DEVOLVIDA?".format(
+                             folder["name"], pv.folder_total(folder)),
+                         _do, "DEVOLVIDO", icon=I.ok)
+        else:
+            _do()
+
+    def pv_delete_folder(self):
+        folder = self.pv_folder()
+        if folder is None:
+            return
+
+        def _do():
+            removed = self.db.delete_folder(folder["id"])
+            self.pv_folder_id = ""
+            self.refresh_pv()
+            self.go("pv_folders")
+
+            def _undo():
+                self.db.reinsert_folder(removed)
+                self.refresh_pv()
+
+            self.show_snackbar("Pasta {} excluída".format(removed["name"]), "DESFAZER", _undo)
+
+        self.confirm("EXCLUIR PASTA",
+                     "Excluir a pasta {} com {} cliente(s)?".format(
+                         folder["name"], len(folder["records"])), _do, "EXCLUIR")
+
+    def pv_set_filter(self, value):
+        self.pv_filter = value
+        self.refresh_pv()
+
+    def pv_set_sum_filter(self, value):
+        self.pv_sum_filter = value
+        self.refresh_pv()
+
+    def _return_row_height(self, items, width, has_photos=False):
+        # padding + cliente + data + barra de ações + espaçamentos
+        base = dp(10) * 2 + dp(26) + dp(18) + dp(40) + dp(6) * 4
+        text_width = max(width - dp(14) * 2, dp(80))
+        lbl = CoreLabel(text=items, font_size=sp(12), text_size=(text_width, None))
+        lbl.refresh()
+        return base + lbl.texture.size[1] + (dp(62) if has_photos else 0)
+
+    def refresh_pv(self):
+        if self.root is None:
+            return
+        db = self.db
+        self.pv_recent_clients = list(db.clients)
+        self.pv_folders_total = len(db.folders)
+        self.pv_waiting_count = len(db.folders_by_status(pv.WAITING))
+
+        # lista de pastas
+        visible = db.folders_by_status(self.pv_filter or None)
+        self.pv_folders_visible = len(visible)
+        rows = []
+        for f in visible:
+            fg, bg = PV_STATUS_STYLE[f["status"]]
+            rows.append({
+                "folder_id": f["id"],
+                "name": f["name"],
+                "period": pv.period_text(f),
+                "status": f["status"],
+                "status_label": pv.STATUS_LABELS[f["status"]],
+                "status_color": list(fg),
+                "detail": "{} clientes  ·  {} itens".format(
+                    len(pv.totals_by_client(f["records"])), pv.folder_total(f)),
+            })
+        self.screen_ids("pv_folders").rv.data = rows
+
+        # pasta aberta
+        folder = db.get_folder(self.pv_folder_id)
+        if folder is None:
+            self.pv_folder_id = ""
+            self.pv_folder_name = ""
+            records = []
+        else:
+            self.pv_folder_name = folder["name"]
+            self.pv_folder_period = pv.period_text(folder)
+            self.pv_folder_status = folder["status"]
+            self.pv_folder_status_date = (pv.format_date(folder["status_date"][:10])
+                                          if folder["status_date"] else "")
+            records = pv.sort_records(folder["records"])
+        self.pv_folder_count = len(records)
+        self.pv_folder_clients = len(pv.totals_by_client(records))
+        self.pv_folder_total = sum(pv.record_total(r) for r in records)
+        rv = self.screen_ids("pv_folder").rv
+        width = rv.width if rv.width > 10 else Window.width - dp(32)
+        data = []
+        per_client = {}
+        client_count = {}
+        for r in records:
+            client_count[r["client"]] = client_count.get(r["client"], 0) + 1
+        for n, r in enumerate(records, start=1):
+            items = pv.items_text(r)
+            names = [p for p in r.get("photos", []) if ph.exists(db.photos_dir, p)]
+            per_client[r["client"]] = per_client.get(r["client"], 0) + 1
+            seq = ("{}ª DEVOLUÇÃO".format(per_client[r["client"]])
+                   if client_count[r["client"]] > 1 else "")
+            data.append({
+                "record_id": r["id"],
+                "number": n,
+                "client": r["client"],
+                "dates": "DEVOLUÇÃO " + pv.format_date(r["date"]),
+                "items": items,
+                "total": pv.record_total(r),
+                "photo_count": len(names),
+                "seq": seq,
+                "thumbs": [ph.thumb_path(db.photos_dir, p) for p in names[:4]],
+                "height": self._return_row_height(items, width, bool(names)),
+            })
+        rv.data = data
+
+        # resumo
+        chosen = db.folders_by_status(self.pv_sum_filter or None)
+        all_recs = pv.all_records(chosen)
+        sums, total = pv.totals(all_recs)
+        by_client = pv.totals_by_client(all_recs)
+        self.pv_sum_folders = len(chosen)
+        self.pv_sum_total = total
+        self.pv_sum_clients = len(by_client)
+        ids = self.screen_ids("pv_summary")
+        ids.item_bars.clear_widgets()
+        top = max(sums.values()) or 1
+        for name, qty in sums.items():
+            if qty:
+                ids.item_bars.add_widget(
+                    DivisionBar(division=name, count=qty, ratio=qty / float(top)))
+        ids.client_bars.clear_widgets()
+        ctop = by_client[0][1] if by_client else 1
+        for client, qty in by_client:
+            ids.client_bars.add_widget(
+                DivisionBar(division=client, count=qty, ratio=qty / float(ctop)))
+
+    # --- porta vasos: imprimir / exportar / compartilhar ----------------
+    def _pv_targets(self, scope):
+        """scope: "folder" (pasta aberta), "list" (filtro da lista) ou "summary"."""
+        if scope == "folder":
+            folder = self.pv_folder()
+            return [folder] if folder else []
+        status = self.pv_filter if scope == "list" else self.pv_sum_filter
+        return self.db.folders_by_status(status or None)
+
+    def _pv_basename(self, scope, folders):
+        if len(folders) == 1:
+            return "PortaVasos_" + exporter.safe_name(folders[0]["name"])
+        status = self.pv_filter if scope == "list" else self.pv_sum_filter
+        label = {"": "Todas", pv.WAITING: "Aguardando", pv.RETURNED: "Devolvidas"}[status or ""]
+        return "PortaVasos_Pastas_{}_{}".format(label, date.today().strftime("%d-%m-%Y"))
+
+    def _pv_filter_label(self, scope):
+        status = self.pv_filter if scope == "list" else self.pv_sum_filter
+        return {"": "TODAS AS PASTAS", pv.WAITING: "AGUARDANDO DEVOLUÇÃO",
+                pv.RETURNED: "DEVOLVIDAS"}[status or ""]
+
+    def _pv_check(self, folders):
+        if not folders:
+            self.show_info("NADA PARA EXPORTAR", "Nenhuma pasta neste filtro.", icon=I.folder)
+            return False
+        return True
+
+    def pv_print(self, scope="folder"):
+        """Gera o PDF e abre no leitor do celular (que tem a opção Imprimir)."""
+        folders = self._pv_targets(scope)
+        if not self._pv_check(folders):
+            return
+        filename = self._pv_basename(scope, folders) + ".pdf"
+        subtitle = self._pv_filter_label(scope)
+
+        def _after(where, uri):
+            if not pu.open_file(where, uri, pu.PDF_MIME):
+                self.show_info("PDF SALVO", "Arquivo salvo em:\n{}\n\nAbra pelo app de arquivos "
+                               "para imprimir.".format(where), icon=I.printer)
+
+        self._export_file(filename, pu.PDF_MIME,
+                          lambda p: reports.export_folders_pdf(folders, p, subtitle), after=_after)
+
+    def _pv_photo_count(self, folders):
+        return sum(1 for p in pv.all_photos(folders) if ph.exists(self.db.photos_dir, p))
+
+    def pv_export_excel(self, scope="folder"):
+        """Excel: pergunta COM ou SEM fotos quando houver fotos."""
+        folders = self._pv_targets(scope)
+        if not self._pv_check(folders):
+            return
+        count = self._pv_photo_count(folders)
+        if not count:
+            self._pv_save_excel(scope, folders, with_photos=False)
+            return
+        modal = ChoiceModal(title="EXPORTAR EXCEL", subtitle="{} foto(s) nesta exportação".format(
+            count), icon=I.excel)
+        modal.add_choice(I.camera, "Excel COM fotos",
+                         "Fotos de cada cliente abaixo da tabela (arquivo maior)",
+                         lambda: self._pv_save_excel(scope, folders, with_photos=True))
+        modal.add_choice(I.excel, "Excel SEM fotos", "Só a tabela (arquivo leve)",
+                         lambda: self._pv_save_excel(scope, folders, with_photos=False))
+        modal.open()
+
+    def _pv_excel_writer(self, folders, with_photos):
+        photos_dir = self.db.photos_dir if with_photos else None
+        return lambda p: exporter.export_folders_xlsx(folders, p, photos_dir)
+
+    def _pv_excel_name(self, scope, folders, with_photos):
+        return self._pv_basename(scope, folders) + ("_com_fotos" if with_photos else "") + ".xlsx"
+
+    def _pv_save_excel(self, scope, folders, with_photos):
+        self._export_file(self._pv_excel_name(scope, folders, with_photos), pu.XLSX_MIME,
+                          self._pv_excel_writer(folders, with_photos))
+
+    def pv_share(self, scope="folder"):
+        folders = self._pv_targets(scope)
+        if not self._pv_check(folders):
+            return
+        what = folders[0]["name"] if len(folders) == 1 else "{} pastas".format(len(folders))
+        text = pv.share_text(folders)
+        modal = ChoiceModal(title="COMPARTILHAR", subtitle=what)
+        modal.add_choice(I.copy, "Copiar texto", "Cole direto no WhatsApp",
+                         lambda: self._copy(text))
+        modal.add_choice(I.message, "Enviar texto (WhatsApp)", "Lista organizada com os totais",
+                         lambda: self._share(text))
+        modal.add_choice(I.pdf, "PDF", "Relatório pronto para imprimir",
+                         lambda: self._pv_share_file(scope, folders, "pdf"))
+        if self._pv_photo_count(folders):
+            modal.add_choice(I.camera, "Excel COM fotos", "Planilha .xlsx com as fotos",
+                             lambda: self._pv_share_file(scope, folders, "xlsx_photos"))
+            modal.add_choice(I.excel, "Excel SEM fotos", "Planilha .xlsx leve",
+                             lambda: self._pv_share_file(scope, folders, "xlsx"))
+        else:
+            modal.add_choice(I.excel, "Excel", "Planilha .xlsx",
+                             lambda: self._pv_share_file(scope, folders, "xlsx"))
+        modal.open()
+
+    def _pv_share_file(self, scope, folders, kind):
+        if kind == "pdf":
+            mime = pu.PDF_MIME
+            filename = self._pv_basename(scope, folders) + ".pdf"
+            subtitle = self._pv_filter_label(scope)
+            writer = lambda p: reports.export_folders_pdf(folders, p, subtitle)  # noqa: E731
+        else:
+            with_photos = kind == "xlsx_photos"
+            mime = pu.XLSX_MIME
+            filename = self._pv_excel_name(scope, folders, with_photos)
+            writer = self._pv_excel_writer(folders, with_photos)
+
+        def _after(where, uri):
+            if not pu.share_file(uri, mime, "Porta Vasos"):
+                self.show_info("ARQUIVO SALVO", "Arquivo salvo em:\n" + where, icon=I.download)
+
+        self._export_file(filename, mime, writer, after=_after)
+
+    # --- porta vasos: cliente individual ---------------------------------
+    def _copy(self, text):
+        try:
+            Clipboard.copy(text)
+        except Exception as exc:  # noqa: BLE001
+            self.show_info("ERRO", "Não foi possível copiar.\n{}".format(exc))
+            return
+        self.feedback(True)
+        self.show_snackbar("Copiado! Cole no WhatsApp.", duration=3)
+
+    def pv_copy_record(self, record_id):
+        folder, record = self.db.find_record(record_id)
+        if record is not None:
+            self._copy(pv.record_text(record, folder))
+
+    def pv_share_record(self, record_id):
+        folder, record = self.db.find_record(record_id)
+        if record is None:
+            return
+        text = pv.record_text(record, folder)
+        names = [p for p in record.get("photos", []) if ph.exists(self.db.photos_dir, p)]
+        modal = ChoiceModal(title="ENVIAR CLIENTE", subtitle="{} · {} itens".format(
+            record["client"], pv.record_total(record)))
+        modal.add_choice(I.copy, "Copiar texto", "Cole direto no WhatsApp",
+                         lambda: self._copy(text))
+        modal.add_choice(I.message, "Enviar texto", "WhatsApp, e-mail...",
+                         lambda: self._share(text))
+        if names:
+            modal.add_choice(I.camera, "Enviar com fotos ({})".format(len(names)),
+                             "Texto + fotos do material",
+                             lambda: self._pv_share_with_photos(text, names))
+        modal.open()
+
+    def _pv_share_with_photos(self, text, names):
+        paths = [ph.photo_path(self.db.photos_dir, n) for n in names]
+        try:
+            ok = pu.share_images(paths, text, "Enviar cliente")
+        except Exception as exc:  # noqa: BLE001
+            print("NeonCart: erro ao enviar fotos:", exc)
+            ok = False
+        if not ok:
+            self._copy(text)
+            self.show_info("FOTOS", "Não foi possível anexar as fotos neste aparelho. "
+                           "O texto foi copiado; anexe as fotos pelo WhatsApp.", icon=I.camera)
+
+    def pv_record_photos(self, record_id):
+        """Abre as fotos do cliente (ou avisa que não há)."""
+        _folder, record = self.db.find_record(record_id)
+        if record is None:
+            return
+        if not record.get("photos"):
+            self.show_info("SEM FOTOS", "Este cliente não tem fotos. Use EDITAR para adicionar.",
+                           icon=I.camera)
+            return
+        thumb = PhotoThumb(record_id=record_id, index=0)
+        self.pv_open_photo(thumb)
 
     # --- backup ----------------------------------------------------------
     def export_backup(self):
@@ -907,10 +1897,15 @@ class NeonCartApp(App):
         self.continuous = self.db.settings["continuous"]
         self.vibrate_on = self.db.settings["vibrate"]
         self.sound_on = self.db.settings["sound"]
+        self.pv_folder_id = ""
         self.refresh_all()
         self.show_info("BACKUP RESTAURADO",
                        "{}\n\n{} carrinhos na lista, {} listas salvas.".format(
                            name, summary["total"], summary["sessions"]), icon=I.db_import)
+
+
+# Nome novo do app (o antigo continua valendo para não quebrar nada).
+MaterialCirculanteApp = NeonCartApp
 
 
 if __name__ == "__main__":

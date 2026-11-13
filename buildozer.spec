@@ -1,6 +1,8 @@
 [app]
 
-title = Neon Cart
+title = Material Circulante
+# package.name/domain ficam iguais: o APK novo instala por cima do Neon Cart
+# e mantém os dados (lista, listas salvas, histórico) que já estão no celular.
 package.name = neoncart
 package.domain = br.com.neoncart
 
@@ -9,7 +11,7 @@ source.include_exts = py,kv,png,ttf,json,wav
 source.exclude_dirs = tests, bin, .buildozer, .venv, .git, .github, __pycache__
 source.exclude_patterns = README.md, requirements-dev.txt
 
-version = 2.0.0
+version = 2.1.0
 
 # pyzbar usa a lib nativa libzbar (receita do python-for-android).
 # filetype é dependência do Kivy 2.3.1 (kivy.core.image) que o p4a v2024.01.21 não inclui.

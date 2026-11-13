@@ -8,6 +8,9 @@ Arquivo único (JSON, versão 2) com:
 - sessions:  listas salvas
 - divisions: setores usados recentemente
 - settings:  preferências
+- folders:   pastas semanais de devolução de material (Porta Vasos)
+- clients:   clientes usados recentemente (Porta Vasos)
+- client_list: cadastro de clientes (Porta Vasos), em ordem alfabética
 """
 
 import json
@@ -16,6 +19,8 @@ import tempfile
 import uuid
 from collections import Counter
 from datetime import datetime, timezone
+
+import portavasos as pv
 
 DATA_VERSION = 2
 
@@ -139,6 +144,7 @@ class Database:
 
     MAX_HISTORY = 5000
     MAX_DIVISIONS = 8
+    MAX_CLIENTS = 12
 
     def __init__(self, path, legacy_path=None):
         self.path = path
@@ -146,8 +152,14 @@ class Database:
         self.history = []
         self.sessions = []
         self.divisions = []
+        self.folders = []
+        self.clients = []
+        self.client_list = []
         self.settings = dict(DEFAULT_SETTINGS)
+        # Falso se o arquivo existe mas não pôde ser lido: aí nada é apagado.
+        self.loaded_ok = True
         if os.path.exists(path):
+            self.loaded_ok = False
             self._load()
         elif legacy_path and os.path.exists(legacy_path):
             self._migrate_v1(legacy_path)
@@ -157,12 +169,13 @@ class Database:
         try:
             with open(self.path, "r", encoding="utf-8") as fh:
                 data = json.load(fh)
-        except (OSError, json.JSONDecodeError):
+        except (OSError, ValueError):  # ValueError cobre JSON e texto com bytes inválidos
             return
         if isinstance(data, list):  # formato antigo (só a lista)
             data = {"entries": data}
         if isinstance(data, dict):
             self._apply(data)
+            self.loaded_ok = True
 
     def _apply(self, data):
         self.entries = _clean_entries(data.get("entries"))
@@ -170,6 +183,14 @@ class Database:
         self.sessions = _clean_sessions(data.get("sessions"))
         self.divisions = [normalize_division(d) for d in data.get("divisions") or []
                           if isinstance(d, str) and d.strip()][: self.MAX_DIVISIONS]
+        self.folders = pv.clean_folders(data.get("folders"))
+        self.clients = [pv.normalize_client(c) for c in data.get("clients") or []
+                        if isinstance(c, str) and c.strip()][: self.MAX_CLIENTS]
+        # cadastro de clientes; na 1ª vez, monta com os clientes que já estão nas pastas
+        names = [c for c in data.get("client_list") or [] if isinstance(c, str)]
+        if "client_list" not in data:
+            names += [r["client"] for f in self.folders for r in f["records"]]
+        self.client_list = sorted({pv.normalize_client(c) for c in names if c.strip()})
         settings = dict(DEFAULT_SETTINGS)
         for key, value in (data.get("settings") or {}).items():
             if key in DEFAULT_SETTINGS and isinstance(value, bool):
@@ -194,6 +215,9 @@ class Database:
             "sessions": self.sessions,
             "divisions": self.divisions,
             "settings": self.settings,
+            "folders": self.folders,
+            "clients": self.clients,
+            "client_list": self.client_list,
         }
 
     def save(self):
@@ -425,6 +449,202 @@ class Database:
         self.save()
         return session, autosaved
 
+    # --- porta vasos: pastas semanais -----------------------------------
+    def get_folder(self, folder_id):
+        return next((f for f in self.folders if f["id"] == folder_id), None)
+
+    def folders_by_status(self, status=None):
+        return [f for f in self.folders if status is None or f["status"] == status]
+
+    def _folder_conflict(self, start, exclude_id=None):
+        return next((f for f in self.folders
+                     if f["start"] == start and f["id"] != exclude_id), None)
+
+    def add_folder(self, name, start, end):
+        """Cria uma pasta. Levanta portavasos.PvError (inclusive semana repetida)."""
+        folder = pv.build_folder(name, start, end)
+        other = self._folder_conflict(folder["start"])
+        if other is not None:
+            raise pv.PvError("Já existe a pasta \"{}\" começando em {}.".format(
+                other["name"], pv.format_date(other["start"])))
+        self.folders.append(folder)
+        self.folders = pv.sort_folders(self.folders)
+        self.save()
+        return folder
+
+    def update_folder(self, folder_id, name, start, end):
+        folder = self.get_folder(folder_id)
+        if folder is None:
+            return None
+        data = pv.build_folder(name, start, end, folder_id=folder_id, created=folder["created"])
+        other = self._folder_conflict(data["start"], exclude_id=folder_id)
+        if other is not None:
+            raise pv.PvError("Já existe a pasta \"{}\" começando em {}.".format(
+                other["name"], pv.format_date(other["start"])))
+        folder.update(name=data["name"], start=data["start"], end=data["end"])
+        self.folders = pv.sort_folders(self.folders)
+        self.save()
+        return folder
+
+    def set_folder_status(self, folder_id, status):
+        folder = self.get_folder(folder_id)
+        if folder is None or status not in pv.STATUSES:
+            return None
+        folder["status"] = status
+        folder["status_date"] = pv.now_iso() if status == pv.RETURNED else ""
+        self.save()
+        return folder
+
+    def delete_folder(self, folder_id):
+        folder = self.get_folder(folder_id)
+        if folder is not None:
+            self.folders.remove(folder)
+            self.save()
+        return folder
+
+    def reinsert_folder(self, folder):
+        if self.get_folder(folder["id"]) is None:
+            self.folders.append(folder)
+            self.folders = pv.sort_folders(self.folders)
+            self.save()
+
+    def _remember_client(self, client):
+        if client in self.clients:
+            self.clients.remove(client)
+        self.clients.insert(0, client)
+        del self.clients[self.MAX_CLIENTS:]
+        if client not in self.client_list:
+            self.client_list = sorted(self.client_list + [client])
+
+    # --- cadastro de clientes ------------------------------------------
+    def add_client(self, name):
+        """Cadastra um cliente na lista. Retorna o nome normalizado (ou None)."""
+        name = pv.normalize_client(name)
+        if not name:
+            return None
+        if name not in self.client_list:
+            self.client_list = sorted(self.client_list + [name])
+            self.save()
+        return name
+
+    def remove_client(self, name):
+        """Tira o cliente da lista (os registros dele continuam nas pastas)."""
+        name = pv.normalize_client(name)
+        changed = False
+        if name in self.client_list:
+            self.client_list.remove(name)
+            changed = True
+        if name in self.clients:
+            self.clients.remove(name)
+            changed = True
+        if changed:
+            self.save()
+        return changed
+
+    def search_clients(self, query=""):
+        q = pv.normalize_client(query)
+        return [c for c in self.client_list if not q or q in c]
+
+    def client_returns(self, folder_id, client, exclude_id=None):
+        """Devoluções do cliente já registradas na pasta (por data)."""
+        folder = self.get_folder(folder_id)
+        client = pv.normalize_client(client)
+        if folder is None or not client:
+            return []
+        return pv.sort_records([r for r in folder["records"]
+                                if r["client"] == client and r["id"] != exclude_id])
+
+    def find_record(self, record_id):
+        """(pasta, registro) ou (None, None)."""
+        for folder in self.folders:
+            for r in folder["records"]:
+                if r["id"] == record_id:
+                    return folder, r
+        return None, None
+
+    @staticmethod
+    def _check_carts(folder, carts, exclude_id=None):
+        for code in pv.clean_carts(carts):
+            other = pv.find_cart(folder, code, exclude_id)
+            if other is not None:
+                raise pv.PvError("O carrinho {} já foi registrado nesta pasta para {} "
+                                 "({}).".format(code, other["client"],
+                                                pv.format_date(other["date"])))
+
+    def add_record(self, folder_id, client, return_date, items, photos=None, carts=None):
+        """Registra uma devolução na pasta. Levanta portavasos.PvError.
+
+        O mesmo cliente pode ter várias devoluções (uma por data).
+        """
+        folder = self.get_folder(folder_id)
+        if folder is None:
+            raise pv.PvError("Pasta não encontrada.")
+        record = pv.build_record(client, return_date, items, photos=photos, carts=carts)
+        self._check_carts(folder, record["carts"])
+        folder["records"].append(record)
+        self._remember_client(record["client"])
+        self.save()
+        return record
+
+    def update_record(self, record_id, client, return_date, items, photos=None, carts=None):
+        """Atualiza o registro. photos/carts=None mantêm o que ele já tinha."""
+        folder, old = self.find_record(record_id)
+        if old is None:
+            return None
+        if carts is None and old.get("carts"):
+            carts = old["carts"]
+        record = pv.build_record(client, return_date, items, record_id=record_id,
+                                 timestamp=old["timestamp"],
+                                 photos=old.get("photos") if photos is None else photos,
+                                 carts=carts)
+        self._check_carts(folder, record["carts"], exclude_id=record_id)
+        old.clear()
+        old.update(record)
+        self._remember_client(record["client"])
+        self.save()
+        return old
+
+    def set_record_photos(self, record_id, photos):
+        _folder, record = self.find_record(record_id)
+        if record is None:
+            return None
+        record["photos"] = pv.clean_photos(photos)
+        self.save()
+        return record
+
+    @property
+    def photos_dir(self):
+        return os.path.join(os.path.dirname(os.path.abspath(self.path)), "photos")
+
+    def used_photos(self):
+        return set(pv.all_photos(self.folders))
+
+    def purge_photos(self, keep_extra=()):
+        """Apaga do aparelho fotos que nenhum registro usa (ex.: cadastro cancelado)."""
+        import photos
+
+        if not self.loaded_ok:
+            return 0
+        return photos.purge_orphans(self.photos_dir, self.used_photos() | set(keep_extra))
+
+    def remove_record(self, record_id):
+        """Remove e retorna (pasta, registro, posição) para desfazer."""
+        for folder in self.folders:
+            for idx, r in enumerate(folder["records"]):
+                if r["id"] == record_id:
+                    del folder["records"][idx]
+                    self.save()
+                    return folder, r, idx
+        return None, None, -1
+
+    def restore_record(self, folder_id, record, index=0):
+        folder = self.get_folder(folder_id)
+        if folder is None or self.find_record(record["id"])[1] is not None:
+            return False
+        folder["records"].insert(max(0, min(index, len(folder["records"]))), record)
+        self.save()
+        return True
+
     # --- ajustes -------------------------------------------------------
     def set_setting(self, key, value):
         if key not in DEFAULT_SETTINGS:
@@ -447,6 +667,7 @@ class Database:
             "today_scans": today_counts[SCAN],
             "sessions": len(self.sessions),
             "saved_entries": sum(len(s["entries"]) for s in self.sessions),
+            "folders": len(self.folders),
         }
 
     # --- backup --------------------------------------------------------
@@ -466,7 +687,7 @@ class Database:
         if isinstance(data, list):
             data = {"entries": data}
         if not isinstance(data, dict) or not any(
-                k in data for k in ("entries", "sessions", "history")):
+                k in data for k in ("entries", "sessions", "history", "folders")):
             raise BackupError("Arquivo não é um backup do Neon Cart")
         self._apply(data)
         self.save()

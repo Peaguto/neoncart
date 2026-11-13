@@ -70,6 +70,7 @@ class ScannerModal(ModalView):
     camera = ObjectProperty(None, allownone=True)
     continuous = BooleanProperty(False)
     division = StringProperty("")
+    target_label = StringProperty("SETOR")  # "CLIENTE" no Porta Vasos
     count = NumericProperty(0)
     last_code = StringProperty("")
     last_message = StringProperty("")
