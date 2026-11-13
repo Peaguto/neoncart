@@ -332,9 +332,11 @@
                     Label:
                         text: app.app_name
                         bold: True
-                        font_size: "19sp"
+                        # diminui em telas estreitas para o nome caber inteiro
+                        font_size: "19sp" if self.width >= dp(250) else ("16sp" if self.width >= dp(205) else "14sp")
                         color: C.pink300
                         shorten: True
+                        shorten_from: "right"
                         text_size: self.size
                         halign: "left"
                         valign: "bottom"
@@ -379,8 +381,10 @@
             PvSummaryScreen:
                 name: "pv_summary"
 
-        # Navegação inferior (uma barra por módulo; some no menu inicial)
-        BoxLayout:
+        # Navegação inferior: uma barra por módulo, as duas sobrepostas e sempre
+        # com a largura toda (só a do módulo atual aparece e recebe toques).
+        # Some no menu inicial.
+        FloatLayout:
             size_hint_y: None
             height: dp(62) if app.module != "menu" else 0
             opacity: 1 if app.module != "menu" else 0
@@ -396,8 +400,8 @@
                 Line:
                     points: self.x, self.top, self.right, self.top
             BoxLayout:
-                size_hint_x: 1 if app.module == "pv" else None
-                width: 0
+                pos_hint: {"x": 0, "y": 0}
+                size_hint: 1, 1
                 opacity: 1 if app.module == "pv" else 0
                 disabled: app.module != "pv"
                 NavButton:
@@ -414,8 +418,8 @@
                     text: "AJUSTES"
                     screen: "settings"
             BoxLayout:
-                size_hint_x: 1 if app.module == "cart" else None
-                width: 0
+                pos_hint: {"x": 0, "y": 0}
+                size_hint: 1, 1
                 opacity: 1 if app.module == "cart" else 0
                 disabled: app.module != "cart"
                 NavButton:
