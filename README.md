@@ -1,9 +1,51 @@
-# Neon Cart (Android / Python)
+# Material Circulante (Android / Python)
 
-App de baixa de carrinhos convertido do app web (React) para Python com
+App de controle de material circulante (antigo **Neon Cart**), em Python com
 [Kivy](https://kivy.org). Gera APK com [Buildozer](https://buildozer.readthedocs.io).
 
-## Funções
+O **menu inicial** tem dois módulos: **CART** (baixa de carrinhos, abaixo) e
+**PORTA VASOS** (devolução de material circulante).
+
+## Porta Vasos
+
+Devolução de material organizada em **pastas semanais**.
+
+- **Pastas**: uma por semana (padrão domingo a sábado, ex.: `SEMANA 08.11 - 14.11`;
+  nome e datas editáveis). Atalhos SEMANA PASSADA / ESTA SEMANA / PRÓXIMA.
+  Filtro TODAS / AGUARDANDO / DEVOLVIDAS.
+- **Status** de cada pasta: **AGUARDANDO DEVOLUÇÃO** ou **DEVOLVIDO** (com a data);
+  toque no status para trocar.
+- **Dentro da pasta**: devoluções com cliente, data e quantidade de cada material
+  (DIVISÓRIAS, CESTO MOD 1/2, SUP MOD 2, SUP LONGO MOD 2, PTV P06, P09, P11, P13,
+  P15, P17, PTV C21, CEST MULTI). Editar/excluir com desfazer.
+- **Carrinhos**: cada carrinho é bipado (câmera, modo contínuo) ou tem o código
+  digitado; a quantidade é o número de códigos. O mesmo código não entra duas
+  vezes na mesma pasta.
+- **Mesmo cliente, várias devoluções**: cada devolução é um registro com a sua
+  data (ex.: AURORA 12 P11 hoje, 14 P13 amanhã). O formulário avisa quando o
+  cliente já devolveu na pasta e a lista marca "1ª / 2ª DEVOLUÇÃO".
+- **Cliente**: digitar o nome ou escolher na **LISTA** (buscar, cadastrar novo,
+  remover da lista), além dos atalhos dos recentes.
+- **Fotos**: tirar foto (câmera do app, várias seguidas) ou escolher da galeria;
+  miniaturas no registro; visualizador com girar e excluir. As fotos ficam na
+  pasta privada do app e **não** entram no backup `.json`.
+- **Cliente individual**: COPIAR (área de transferência, para colar no WhatsApp)
+  ou ENVIAR (texto, ou texto + fotos).
+- **Imprimir**: gera PDF (A4 paisagem) com cabeçalho, status, tabela por cliente,
+  total da pasta, resumo por cliente e campo de conferência/assinatura, e abre no
+  leitor de PDF do celular (que tem a opção Imprimir). Da lista de pastas ou do
+  resumo, imprime várias pastas com uma capa de resumo.
+- **Excel** (COM ou SEM fotos): uma aba por pasta (com aba RESUMO quando são
+  várias). Em cada aba: DEVOLUÇÕES POR DIA (uma linha por devolução, com os
+  códigos dos carrinhos) + TOTAL DA PASTA; RESUMO POR CLIENTE (cada devolução com
+  a data e, se o cliente devolveu mais de uma vez, a linha TOTAL do cliente); e,
+  com fotos, as fotos de cada cliente abaixo. Configurada para imprimir em uma
+  página de largura.
+- **Compartilhar**: texto organizado para WhatsApp, PDF ou Excel.
+- **Resumo**: totais por material e por cliente (todas, aguardando ou devolvidas).
+- As pastas entram no backup `.json` junto com os dados do Cart.
+
+## Cart — funções
 
 **Lista (tela inicial)**
 - Cadastro de carrinho: setor/divisória, código e observação (código e setor em maiúsculas).
@@ -43,6 +85,11 @@ Dados salvos em `neoncart.json` na pasta privada do app (migra o `entries.json` 
 | `neoncart.kv` | Layout e tema neon |
 | `storage.py` | Dados: lista, histórico, listas salvas, resumo, backup (sem Kivy) |
 | `exporter.py` | Planilhas `.xlsx`, backup `.json` e textos para compartilhar |
+| `portavasos.py` | Porta Vasos: pastas, status, materiais, datas, totais (sem Kivy) |
+| `reports.py` | Relatório em PDF das pastas (layout de impressão) |
+| `pdfgen.py` | Gerador de PDF próprio, sem dependências (Helvetica, acentos) |
+| `photos.py` | Fotos: salvar, miniaturas, girar, limpar não usadas, NV21 da câmera |
+| `photo_capture.py` | Câmera do app para fotografar o material |
 | `scanner.py` | Câmera, decodificação e modo contínuo |
 | `platform_utils.py` | Android via pyjnius: permissões, compartilhar, Downloads, flash, vibração, seletor de arquivo |
 | `theme.py` | Cores, ícones e degradês |

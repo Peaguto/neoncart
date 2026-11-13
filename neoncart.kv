@@ -250,7 +250,7 @@
     on_release: app.go(self.screen)
     canvas.before:
         Color:
-            rgba: C.pink500 if app.current_screen == self.screen else (0, 0, 0, 0)
+            rgba: C.pink500 if app.current_screen in [self.screen] + self.also.split() else (0, 0, 0, 0)
         RoundedRectangle:
             pos: self.center_x - dp(18), self.top - dp(3)
             size: dp(36), dp(3)
@@ -258,13 +258,13 @@
     IconLabel:
         icon: root.icon
         font_size: "24sp"
-        color: C.pink400 if app.current_screen == root.screen else C.purple700
+        color: C.pink400 if app.current_screen in [root.screen] + root.also.split() else C.purple700
         pos_hint: {"center_x": .5}
     Label:
         text: root.text
         bold: True
         font_size: "10sp"
-        color: C.pink300 if app.current_screen == root.screen else C.purple700
+        color: C.pink300 if app.current_screen in [root.screen] + root.also.split() else C.purple700
 
 <Root>:
     canvas.before:
@@ -305,9 +305,17 @@
                         rgba: C.border_soft
                     Line:
                         rounded_rectangle: (self.x, self.y, self.width, self.height, dp(16))
-                AnchorLayout:
-                    size_hint_x: None
-                    width: dp(44)
+                # Ícone do módulo; fora do menu vira "voltar"
+                IconButton:
+                    icon: I.apps if app.current_screen == "menu" else I.arrow_left
+                    icon_color: C.pink400
+                    font_size: "26sp"
+                    size: dp(44), dp(44)
+                    pos_hint: {"center_y": .5}
+                    disabled: app.current_screen == "menu"
+                    disabled_color: C.pink400
+                    color: C.pink400
+                    on_release: app.go_back()
                     canvas.before:
                         Color:
                             rgba: (0, 0, 0, 0.4)
@@ -319,17 +327,14 @@
                             rgba: (0.93, 0.28, 0.6, 0.3)
                         Line:
                             rounded_rectangle: (self.x, self.y, self.width, self.height, dp(12))
-                    IconLabel:
-                        icon: I.cart
-                        font_size: "26sp"
-                        color: C.pink400
                 BoxLayout:
                     orientation: "vertical"
                     Label:
-                        text: "NEON CART"
+                        text: app.app_name
                         bold: True
-                        font_size: "21sp"
+                        font_size: "19sp"
                         color: C.pink300
+                        shorten: True
                         text_size: self.size
                         halign: "left"
                         valign: "bottom"
@@ -341,8 +346,9 @@
                         text_size: self.size
                         halign: "left"
                         valign: "top"
+                        shorten: True
                 Label:
-                    text: "{} na lista".format(app.total)
+                    text: ("{} na lista".format(app.total) if app.module == "cart" else ("{} pastas".format(app.pv_folders_total) if app.module == "pv" else "v" + app.version))
                     font_name: "RobotoMono-Regular"
                     font_size: "11sp"
                     color: C.pink200
@@ -352,6 +358,8 @@
         ScreenManager:
             id: sm
             transition: NoTransition()
+            MenuScreen:
+                name: "menu"
             HomeScreen:
                 name: "home"
             HistoryScreen:
@@ -362,11 +370,21 @@
                 name: "summary"
             SettingsScreen:
                 name: "settings"
+            PvFoldersScreen:
+                name: "pv_folders"
+            PvFolderScreen:
+                name: "pv_folder"
+            PvNewScreen:
+                name: "pv_new"
+            PvSummaryScreen:
+                name: "pv_summary"
 
-        # Navegação inferior
+        # Navegação inferior (uma barra por módulo; some no menu inicial)
         BoxLayout:
             size_hint_y: None
-            height: dp(62)
+            height: dp(62) if app.module != "menu" else 0
+            opacity: 1 if app.module != "menu" else 0
+            disabled: app.module == "menu"
             canvas.before:
                 Color:
                     rgba: C.field
@@ -377,26 +395,49 @@
                     rgba: C.border
                 Line:
                     points: self.x, self.top, self.right, self.top
-            NavButton:
-                icon: I.cart
-                text: "LISTA"
-                screen: "home"
-            NavButton:
-                icon: I.history
-                text: "HISTÓRICO"
-                screen: "history"
-            NavButton:
-                icon: I.folders
-                text: "SALVOS"
-                screen: "saved"
-            NavButton:
-                icon: I.chart
-                text: "RESUMO"
-                screen: "summary"
-            NavButton:
-                icon: I.cog
-                text: "AJUSTES"
-                screen: "settings"
+            BoxLayout:
+                size_hint_x: 1 if app.module == "pv" else None
+                width: 0
+                opacity: 1 if app.module == "pv" else 0
+                disabled: app.module != "pv"
+                NavButton:
+                    icon: I.folder
+                    text: "PASTAS"
+                    screen: "pv_folders"
+                    also: "pv_folder pv_new"
+                NavButton:
+                    icon: I.chart
+                    text: "RESUMO"
+                    screen: "pv_summary"
+                NavButton:
+                    icon: I.cog
+                    text: "AJUSTES"
+                    screen: "settings"
+            BoxLayout:
+                size_hint_x: 1 if app.module == "cart" else None
+                width: 0
+                opacity: 1 if app.module == "cart" else 0
+                disabled: app.module != "cart"
+                NavButton:
+                    icon: I.cart
+                    text: "LISTA"
+                    screen: "home"
+                NavButton:
+                    icon: I.history
+                    text: "HISTÓRICO"
+                    screen: "history"
+                NavButton:
+                    icon: I.folders
+                    text: "SALVOS"
+                    screen: "saved"
+                NavButton:
+                    icon: I.chart
+                    text: "RESUMO"
+                    screen: "summary"
+                NavButton:
+                    icon: I.cog
+                    text: "AJUSTES"
+                    screen: "settings"
 
     # Aviso com "desfazer"
     Snackbar:
@@ -487,7 +528,7 @@
                 height: dp(36) if app.recent_divisions else 0
                 opacity: 1 if app.recent_divisions else 0
                 viewclass: "DivisionChip"
-                data: [{"text": d, "active": d == division.text.strip().upper()} for d in app.recent_divisions]
+                data: [{"text": d, "width": app.chip_width(d), "height": dp(30), "active": d == division.text.strip().upper()} for d in app.recent_divisions]
 
             BoxLayout:
                 size_hint_y: None
@@ -626,7 +667,7 @@
             on_text: app.history_query = self.text
         ChipStrip:
             viewclass: "FilterChip"
-            data: [{"text": label, "value": value or "", "active": (value or "") == app.history_filter} for label, value in app.history_filters]
+            data: [{"text": label, "width": app.chip_width(label), "height": dp(30), "value": value or "", "active": (value or "") == app.history_filter} for label, value in app.history_filters]
         Card:
             CardHeader:
                 icon: I.barcode
@@ -908,7 +949,7 @@
         font_size: "12sp"
         bold: True
         color: C.pink300
-        size_hint_x: .38
+        size_hint_x: .46
         text_size: self.size
         halign: "left"
         valign: "middle"
@@ -1139,7 +1180,7 @@
                 ActionRow:
                     icon: I.db_import
                     title: "Importar backup"
-                    subtitle: "Restaura um arquivo NeonCart_Backup_*.json"
+                    subtitle: "Restaura um arquivo NeonCart_Backup_*.json (Cart e Porta Vasos)"
                     on_release: app.import_backup()
                 ActionRow:
                     icon: I.file_export
@@ -1159,7 +1200,7 @@
                 height: self.minimum_height
                 padding: dp(14), dp(12)
                 Label:
-                    text: "Neon Cart {}  ·  dados salvos só neste aparelho.\nFaça backup antes de desinstalar ou trocar de celular.".format(app.version)
+                    text: "Material Circulante {}  ·  Cart e Porta Vasos.\nDados salvos só neste aparelho. Faça backup antes de desinstalar ou trocar de celular.".format(app.version)
                     font_size: "12sp"
                     color: C.purple300
                     size_hint_y: None
@@ -1702,7 +1743,7 @@
                     Line:
                         rounded_rectangle: (self.x, self.y, self.width, self.height, dp(14))
                 Label:
-                    text: "SETOR: [b]{}[/b]   ·   [b]{}[/b] registrados".format(escape_markup(root.division), root.count)
+                    text: "{}: [b]{}[/b]   ·   [b]{}[/b] registrados".format(root.target_label, escape_markup(root.division or "-"), root.count)
                     markup: True
                     font_size: "12sp"
                     color: C.purple300
@@ -1789,3 +1830,1409 @@
                 size_hint_y: None
                 height: dp(20) if not root.continuous else 0
                 opacity: 1 if not root.continuous else 0
+
+# ================================================================ menu inicial
+<MenuCard>:
+    size_hint_y: None
+    height: dp(120)
+    padding: dp(18), dp(14)
+    spacing: dp(16)
+    canvas.before:
+        Color:
+            rgba: (0.93, 0.28, 0.6, 0.25)
+        BoxShadow:
+            pos: self.pos
+            size: self.size
+            offset: 0, 0
+            blur_radius: dp(18)
+            border_radius: [dp(18)] * 4
+        Color:
+            rgba: (0.18, 0.08, 0.25, 1) if self.state == "down" else C.card
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(18)]
+        Color:
+            rgba: C.pink500 if self.state == "down" else C.border_soft
+        Line:
+            rounded_rectangle: (self.x, self.y, self.width, self.height, dp(18))
+            width: dp(1.5)
+    AnchorLayout:
+        size_hint_x: None
+        width: dp(64)
+        canvas.before:
+            Color:
+                rgba: 1, 1, 1, 1
+            RoundedRectangle:
+                pos: self.x, self.center_y - dp(32)
+                size: dp(64), dp(64)
+                radius: [dp(16)]
+                texture: app.grad_main
+        IconLabel:
+            icon: root.icon
+            font_size: "34sp"
+            color: C.white
+    BoxLayout:
+        orientation: "vertical"
+        spacing: dp(2)
+        Label:
+            text: root.title
+            bold: True
+            font_size: "22sp"
+            color: C.pink200
+            text_size: self.size
+            halign: "left"
+            valign: "bottom"
+        Label:
+            text: root.subtitle
+            font_size: "12sp"
+            color: C.purple300
+            text_size: self.size
+            halign: "left"
+            valign: "middle"
+            shorten: True
+        Label:
+            text: root.badge
+            font_name: "RobotoMono-Regular"
+            font_size: "11sp"
+            color: C.pink400
+            text_size: self.size
+            halign: "left"
+            valign: "top"
+    IconLabel:
+        icon: I.chevron_right
+        font_size: "26sp"
+        color: C.purple500
+        pos_hint: {"center_y": .5}
+
+<MenuScreen>:
+    ScrollView:
+        do_scroll_x: False
+        bar_width: dp(4)
+        BoxLayout:
+            orientation: "vertical"
+            size_hint_y: None
+            height: max(self.minimum_height, root.height)
+            padding: dp(16), dp(20), dp(16), dp(16)
+            spacing: dp(16)
+            Label:
+                text: "ESCOLHA O MÓDULO"
+                bold: True
+                font_size: "13sp"
+                color: C.purple400
+                size_hint_y: None
+                height: dp(24)
+                text_size: self.size
+                halign: "left"
+                valign: "middle"
+                padding: dp(4), 0
+            MenuCard:
+                icon: I.cart
+                title: "CART"
+                subtitle: "Baixa de carrinhos por código / câmera"
+                badge: "{} na lista atual".format(app.total)
+                on_release: app.go("home")
+            MenuCard:
+                icon: I.flower
+                title: "PORTA VASOS"
+                subtitle: "Pastas semanais de devolução de material"
+                badge: "{} pasta(s) aguardando devolução".format(app.pv_waiting_count)
+                on_release: app.go("pv_folders")
+            Widget:
+            ActionRow:
+                icon: I.cog
+                title: "Ajustes"
+                subtitle: "Som, vibração, backup e importação"
+                on_release: app.go("settings")
+
+# ================================================================ porta vasos
+<ClientChip@Chip>:
+    on_release: app.pv_pick_client(self.text)
+
+<PvFilterChip@Chip>:
+    value: ""
+    on_release: app.pv_set_filter(self.value)
+
+<PvSumFilterChip@Chip>:
+    value: ""
+    on_release: app.pv_set_sum_filter(self.value)
+
+<DateChip@Chip>:
+    font_size: "11sp"
+    height: dp(26)
+    pos_hint: {"center_y": .5}
+
+<StatusPill>:
+    bold: True
+    font_size: "10sp"
+    color: self.status_color
+    size_hint: None, None
+    size: self.texture_size[0] + dp(16), dp(22)
+    canvas.before:
+        Color:
+            rgba: self.status_color[:3] + [0.15]
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(11)]
+        Color:
+            rgba: self.status_color[:3] + [0.6]
+        Line:
+            rounded_rectangle: (self.x, self.y, self.width, self.height, dp(11))
+
+<ToolButton@ButtonBehavior+BoxLayout>:
+    icon: ""
+    text: ""
+    tint: C.pink400
+    orientation: "vertical"
+    padding: 0, dp(6)
+    disabled_tint: C.purple900
+    canvas.before:
+        Color:
+            rgba: (0.35, 0.11, 0.53, 0.35) if self.state == "down" else (0.35, 0.11, 0.53, 0.15)
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(12)]
+    IconLabel:
+        icon: root.icon
+        font_size: "22sp"
+        color: root.tint if not root.disabled else root.disabled_tint
+        pos_hint: {"center_x": .5}
+    Label:
+        text: root.text
+        bold: True
+        font_size: "10sp"
+        color: root.tint if not root.disabled else root.disabled_tint
+
+<ItemStepper>:
+    orientation: "vertical"
+    size_hint_y: None
+    height: dp(82)
+    padding: dp(8), dp(6)
+    spacing: dp(2)
+    canvas.before:
+        Color:
+            rgba: (0.51, 0.09, 0.26, 0.25) if root.value else C.field
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(12)]
+        Color:
+            rgba: C.pink500 if root.value else C.border
+        Line:
+            rounded_rectangle: (self.x, self.y, self.width, self.height, dp(12))
+    Label:
+        text: root.name
+        bold: True
+        font_size: "11sp"
+        color: C.pink300 if root.value else C.purple300
+        size_hint_y: None
+        height: dp(20)
+        text_size: self.size
+        halign: "center"
+        valign: "middle"
+        shorten: True
+    BoxLayout:
+        spacing: dp(4)
+        IconButton:
+            icon: I.minus
+            icon_color: C.purple400
+            size: dp(40), dp(40)
+            hover_bg: (0.35, 0.11, 0.53, 0.4)
+            pos_hint: {"center_y": .5}
+            disabled: not root.value
+            on_release: root.step(-1)
+        TextInput:
+            id: qty
+            multiline: False
+            write_tab: False
+            input_filter: "int"
+            input_type: "number"
+            halign: "center"
+            hint_text: "0"
+            hint_text_color: C.hint
+            font_name: "RobotoMono-Regular"
+            font_size: "18sp"
+            background_normal: ""
+            background_active: ""
+            background_color: (0, 0, 0, 0)
+            foreground_color: C.pink100
+            cursor_color: C.pink500
+            padding: 0, (self.height - self.line_height) / 2
+            on_text: root.set_text(self.text)
+        IconButton:
+            icon: I.plus
+            icon_color: C.pink400
+            size: dp(40), dp(40)
+            hover_bg: (0.51, 0.09, 0.26, 0.4)
+            pos_hint: {"center_y": .5}
+            on_release: root.step(1)
+
+# ---------------------------------------------------------------- lista de pastas
+<FolderRow>:
+    padding: dp(14), dp(10), dp(8), dp(10)
+    spacing: dp(12)
+    on_release: app.pv_open_folder(self.folder_id)
+    canvas.before:
+        Color:
+            rgba: (0.35, 0.11, 0.53, 0.18) if self.state == "down" else (0, 0, 0, 0)
+        Rectangle:
+            pos: self.pos
+            size: self.size
+    canvas.after:
+        Color:
+            rgba: (0.35, 0.11, 0.53, 0.3)
+        Line:
+            points: self.x, self.y, self.right, self.y
+    AnchorLayout:
+        size_hint_x: None
+        width: dp(46)
+        canvas.before:
+            Color:
+                rgba: root.status_color[:3] + [0.14]
+            RoundedRectangle:
+                pos: self.x, self.center_y - dp(23)
+                size: dp(46), dp(46)
+                radius: [dp(12)]
+        IconLabel:
+            icon: I.folder_check if root.status == "DEVOLVIDO" else I.folder_clock
+            font_size: "26sp"
+            color: root.status_color
+    BoxLayout:
+        orientation: "vertical"
+        spacing: dp(2)
+        Label:
+            text: root.name
+            bold: True
+            font_size: "16sp"
+            color: C.pink200
+            text_size: self.size
+            halign: "left"
+            valign: "middle"
+            shorten: True
+        Label:
+            text: root.period
+            font_name: "RobotoMono-Regular"
+            font_size: "11sp"
+            color: C.purple400
+            text_size: self.size
+            halign: "left"
+            valign: "middle"
+        BoxLayout:
+            spacing: dp(8)
+            StatusPill:
+                text: root.status_label
+                status_color: root.status_color
+                pos_hint: {"center_y": .5}
+            Label:
+                text: root.detail
+                font_size: "11sp"
+                color: C.pink300
+                text_size: self.size
+                halign: "left"
+                valign: "middle"
+                shorten: True
+    IconLabel:
+        icon: I.chevron_right
+        font_size: "24sp"
+        color: C.purple600
+        pos_hint: {"center_y": .5}
+
+<PvFoldersScreen>:
+    BoxLayout:
+        orientation: "vertical"
+        padding: dp(16), dp(12), dp(16), dp(10)
+        spacing: dp(10)
+        GradientButton:
+            icon: I.folder_plus
+            text: "NOVA PASTA DA SEMANA"
+            texture: app.grad_main
+            on_release: app.pv_new_folder()
+        ChipStrip:
+            viewclass: "PvFilterChip"
+            data: [{"text": label, "width": app.chip_width(label), "height": dp(30), "value": value, "active": value == app.pv_filter} for label, value in app.pv_filters]
+        Card:
+            CardHeader:
+                icon: I.folder
+                title: "PASTAS"
+                badge: "{}{}".format(app.pv_folders_visible, " / {}".format(app.pv_folders_total) if app.pv_filter else "")
+                IconButton:
+                    icon: I.printer
+                    disabled: not app.pv_folders_visible
+                    hover_bg: (0.12, 0.23, 0.54, 0.3)
+                    pos_hint: {"center_y": .5}
+                    on_release: app.pv_print("list")
+                IconButton:
+                    icon: I.excel
+                    disabled: not app.pv_folders_visible
+                    hover_bg: (0.08, 0.33, 0.18, 0.3)
+                    pos_hint: {"center_y": .5}
+                    on_release: app.pv_export_excel("list")
+                IconButton:
+                    icon: I.share
+                    disabled: not app.pv_folders_visible
+                    hover_bg: (0.08, 0.33, 0.18, 0.3)
+                    pos_hint: {"center_y": .5}
+                    on_release: app.pv_share("list")
+            FloatLayout:
+                RecycleView:
+                    id: rv
+                    viewclass: "FolderRow"
+                    pos: self.parent.pos
+                    size: self.parent.size
+                    bar_width: dp(6)
+                    bar_color: C.purple900
+                    scroll_type: ["bars", "content"]
+                    RecycleBoxLayout:
+                        orientation: "vertical"
+                        default_size_hint: 1, None
+                        default_size: None, dp(96)
+                        size_hint_y: None
+                        height: self.minimum_height
+                EmptyState:
+                    pos: self.parent.pos
+                    size: self.parent.size
+                    opacity: 1 if app.pv_folders_visible == 0 else 0
+                    icon: I.folder
+                    text: "NENHUMA PASTA AINDA\nCrie a pasta da semana em NOVA PASTA." if app.pv_folders_total == 0 else "NENHUMA PASTA NESTE FILTRO"
+
+# ---------------------------------------------------------------- pasta aberta
+<PhotoThumb>:
+    size_hint: None, None
+    size: dp(58), dp(58)
+    padding: dp(2)
+    on_release: app.pv_open_photo(self)
+    canvas.before:
+        Color:
+            rgba: C.pink500 if self.state == "down" else C.border_soft
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(10)]
+    canvas.after:
+        Color:
+            rgba: (0, 0, 0, 0.55) if root.extra else (0, 0, 0, 0)
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(10)]
+    Image:
+        source: root.source
+        nocache: True
+        fit_mode: "cover"
+
+<RowAction@ButtonBehavior+BoxLayout>:
+    icon: ""
+    text: ""
+    tint: C.purple300
+    spacing: dp(4)
+    padding: dp(6), 0
+    canvas.before:
+        Color:
+            rgba: (0.35, 0.11, 0.53, 0.45) if self.state == "down" else (0.35, 0.11, 0.53, 0.18)
+        RoundedRectangle:
+            pos: self.pos
+            size: self.size
+            radius: [dp(9)]
+    Widget:
+    IconLabel:
+        icon: root.icon
+        font_size: "16sp"
+        color: root.tint
+        pos_hint: {"center_y": .5}
+    Label:
+        text: root.text
+        bold: True
+        font_size: "10sp"
+        color: root.tint
+        size_hint_x: None
+        width: self.texture_size[0]
+    Widget:
+
+<ReturnRow>:
+    orientation: "vertical"
+    padding: dp(14), dp(10)
+    spacing: dp(6)
+    canvas.after:
+        Color:
+            rgba: (0.35, 0.11, 0.53, 0.3)
+        Line:
+            points: self.x, self.y, self.right, self.y
+    BoxLayout:
+        size_hint_y: None
+        height: dp(26)
+        spacing: dp(8)
+        Label:
+            text: "{}.".format(root.number)
+            font_name: "RobotoMono-Regular"
+            font_size: "12sp"
+            color: C.purple500
+            size_hint_x: None
+            width: self.texture_size[0]
+        Label:
+            text: root.client
+            bold: True
+            font_size: "16sp"
+            color: C.pink200
+            text_size: self.size
+            halign: "left"
+            valign: "middle"
+            shorten: True
+        Label:
+            text: root.seq
+            bold: True
+            font_size: "9sp"
+            color: C.amber400
+            size_hint: None, None
+            size: (self.texture_size[0] + dp(10), dp(20)) if root.seq else (0, dp(20))
+            opacity: 1 if root.seq else 0
+            pos_hint: {"center_y": .5}
+            canvas.before:
+                Color:
+                    rgba: (0.98, 0.75, 0.14, 0.15)
+                RoundedRectangle:
+                    pos: self.pos
+                    size: self.size
+                    radius: [dp(5)]
+        Label:
+            text: "[font={}]{}[/font] {}".format(app.icon_font, I.camera, root.photo_count)
+            markup: True
+            font_size: "11sp"
+            color: C.blue400
+            size_hint: None, None
+            size: (self.texture_size[0] + dp(12), dp(22)) if root.photo_count else (0, dp(22))
+            opacity: 1 if root.photo_count else 0
+            pos_hint: {"center_y": .5}
+        Label:
+            text: "{} itens".format(root.total)
+            font_size: "11sp"
+            bold: True
+            color: C.pink300
+            size_hint: None, None
+            size: self.texture_size[0] + dp(14), dp(22)
+            pos_hint: {"center_y": .5}
+            canvas.before:
+                Color:
+                    rgba: (0.51, 0.09, 0.26, 0.4)
+                RoundedRectangle:
+                    pos: self.pos
+                    size: self.size
+                    radius: [dp(6)]
+    Label:
+        text: root.dates
+        font_name: "RobotoMono-Regular"
+        font_size: "11sp"
+        color: C.purple400
+        size_hint_y: None
+        height: dp(18)
+        text_size: self.size
+        halign: "left"
+        valign: "middle"
+        shorten: True
+    Label:
+        text: root.items
+        font_size: "12sp"
+        color: (0.98, 0.66, 0.83, 0.9)
+        size_hint_y: None
+        height: self.texture_size[1]
+        text_size: self.width, None
+        halign: "left"
+    # Miniaturas das fotos
+    BoxLayout:
+        size_hint_y: None
+        height: dp(58) if root.thumbs else 0
+        opacity: 1 if root.thumbs else 0
+        spacing: dp(6)
+        PhotoThumb:
+            source: root.thumbs[0] if len(root.thumbs) > 0 else ""
+            record_id: root.record_id
+            index: 0
+            opacity: 1 if len(root.thumbs) > 0 else 0
+            disabled: len(root.thumbs) < 1
+        PhotoThumb:
+            source: root.thumbs[1] if len(root.thumbs) > 1 else ""
+            record_id: root.record_id
+            index: 1
+            opacity: 1 if len(root.thumbs) > 1 else 0
+            disabled: len(root.thumbs) < 2
+        PhotoThumb:
+            source: root.thumbs[2] if len(root.thumbs) > 2 else ""
+            record_id: root.record_id
+            index: 2
+            opacity: 1 if len(root.thumbs) > 2 else 0
+            disabled: len(root.thumbs) < 3
+        PhotoThumb:
+            source: root.thumbs[3] if len(root.thumbs) > 3 else ""
+            record_id: root.record_id
+            index: 3
+            extra: max(0, root.photo_count - 4)
+            opacity: 1 if len(root.thumbs) > 3 else 0
+            disabled: len(root.thumbs) < 4
+            Label:
+                text: "+{}".format(self.parent.extra) if self.parent and self.parent.extra else ""
+                bold: True
+                font_size: "16sp"
+                color: C.white
+                pos: self.parent.pos if self.parent else (0, 0)
+                size: self.parent.size if self.parent else (0, 0)
+        Widget:
+    # Ações do cliente
+    BoxLayout:
+        size_hint_y: None
+        height: dp(36)
+        spacing: dp(5)
+        RowAction:
+            icon: I.images
+            text: "FOTOS"
+            tint: C.blue400
+            on_release: app.pv_record_photos(root.record_id)
+        RowAction:
+            icon: I.copy
+            text: "COPIAR"
+            tint: C.green400
+            on_release: app.pv_copy_record(root.record_id)
+        RowAction:
+            icon: I.share
+            text: "ENVIAR"
+            tint: C.green400
+            on_release: app.pv_share_record(root.record_id)
+        RowAction:
+            icon: I.edit
+            tint: C.purple300
+            size_hint_x: None
+            width: dp(42)
+            on_release: app.pv_edit(root.record_id)
+        RowAction:
+            icon: I.trash2
+            tint: C.red500
+            size_hint_x: None
+            width: dp(42)
+            on_release: app.pv_remove(root.record_id)
+
+<PvFolderScreen>:
+    BoxLayout:
+        orientation: "vertical"
+        padding: dp(16), dp(12), dp(16), dp(10)
+        spacing: dp(10)
+
+        Card:
+            size_hint_y: None
+            height: self.minimum_height
+            padding: dp(16), dp(12)
+            spacing: dp(8)
+            BoxLayout:
+                size_hint_y: None
+                height: dp(28)
+                spacing: dp(8)
+                IconLabel:
+                    icon: I.folder_open
+                    color: C.pink400
+                    font_size: "22sp"
+                    pos_hint: {"center_y": .5}
+                Label:
+                    text: app.pv_folder_name
+                    bold: True
+                    font_size: "18sp"
+                    color: C.pink200
+                    text_size: self.size
+                    halign: "left"
+                    valign: "middle"
+                    shorten: True
+            Label:
+                text: "{}  ·  {} clientes  ·  {} itens".format(app.pv_folder_period, app.pv_folder_clients, app.pv_folder_total)
+                font_size: "12sp"
+                color: C.purple300
+                size_hint_y: None
+                height: dp(18)
+                text_size: self.size
+                halign: "left"
+                valign: "middle"
+                shorten: True
+            # Status: toque para trocar
+            Button:
+                size_hint_y: None
+                height: dp(46)
+                background_normal: ""
+                background_down: ""
+                background_color: (0, 0, 0, 0)
+                bold: True
+                font_size: "13sp"
+                markup: True
+                color: C.green400 if app.pv_folder_status == "DEVOLVIDO" else C.amber400
+                text: ("[font={0}]{1}[/font]  DEVOLVIDO{2}   ·   [size=11sp]toque p/ reabrir[/size]".format(app.icon_font, I.folder_check, " EM " + app.pv_folder_status_date if app.pv_folder_status_date else "") if app.pv_folder_status == "DEVOLVIDO" else "[font={0}]{1}[/font]  AGUARDANDO DEVOLUÇÃO   ·   [size=11sp]toque quando devolver[/size]".format(app.icon_font, I.folder_clock))
+                on_release: app.pv_toggle_status()
+                canvas.before:
+                    Color:
+                        rgba: ((0.29, 0.87, 0.5, 0.12) if app.pv_folder_status == "DEVOLVIDO" else (0.98, 0.75, 0.14, 0.12)) if self.state == "normal" else ((0.29, 0.87, 0.5, 0.25) if app.pv_folder_status == "DEVOLVIDO" else (0.98, 0.75, 0.14, 0.25))
+                    RoundedRectangle:
+                        pos: self.pos
+                        size: self.size
+                        radius: [dp(12)]
+                    Color:
+                        rgba: (C.green400 if app.pv_folder_status == "DEVOLVIDO" else C.amber400)[:3] + [0.7]
+                    Line:
+                        rounded_rectangle: (self.x, self.y, self.width, self.height, dp(12))
+                        width: dp(1.2)
+            BoxLayout:
+                size_hint_y: None
+                height: dp(58)
+                spacing: dp(6)
+                ToolButton:
+                    icon: I.printer
+                    text: "IMPRIMIR"
+                    on_release: app.pv_print("folder")
+                ToolButton:
+                    icon: I.excel
+                    text: "EXCEL"
+                    tint: C.green400
+                    on_release: app.pv_export_excel("folder")
+                ToolButton:
+                    icon: I.share
+                    text: "ENVIAR"
+                    tint: C.blue400
+                    on_release: app.pv_share("folder")
+                ToolButton:
+                    icon: I.edit
+                    text: "EDITAR"
+                    tint: C.purple300
+                    on_release: app.pv_edit_folder()
+                ToolButton:
+                    icon: I.trash2
+                    text: "EXCLUIR"
+                    tint: C.red500
+                    on_release: app.pv_delete_folder()
+
+        GradientButton:
+            icon: I.plus
+            text: "ADICIONAR CLIENTE"
+            texture: app.grad_main
+            on_release: app.pv_new_record()
+
+        Card:
+            CardHeader:
+                icon: I.account
+                title: "DEVOLUÇÕES DA PASTA"
+                badge: str(app.pv_folder_count)
+            FloatLayout:
+                RecycleView:
+                    id: rv
+                    viewclass: "ReturnRow"
+                    pos: self.parent.pos
+                    size: self.parent.size
+                    bar_width: dp(6)
+                    bar_color: C.purple900
+                    scroll_type: ["bars", "content"]
+                    RecycleBoxLayout:
+                        orientation: "vertical"
+                        default_size_hint: 1, None
+                        size_hint_y: None
+                        height: self.minimum_height
+                EmptyState:
+                    pos: self.parent.pos
+                    size: self.parent.size
+                    opacity: 1 if app.pv_folder_count == 0 else 0
+                    icon: I.account
+                    text: "PASTA VAZIA\nUse ADICIONAR CLIENTE."
+
+# ---------------------------------------------------------------- cliente na pasta
+<PvNewScreen>:
+    ScrollView:
+        do_scroll_x: False
+        bar_width: dp(4)
+        BoxLayout:
+            orientation: "vertical"
+            size_hint_y: None
+            height: self.minimum_height
+            padding: dp(16), dp(12), dp(16), dp(16)
+            spacing: dp(10)
+
+            Card:
+                size_hint_y: None
+                height: self.minimum_height
+                padding: dp(16), dp(12)
+                spacing: dp(4)
+
+                BoxLayout:
+                    size_hint_y: None
+                    height: dp(30)
+                    spacing: dp(8)
+                    IconLabel:
+                        icon: I.edit if app.pv_editing else I.folder_open
+                        color: C.blue400 if app.pv_editing else C.pink400
+                        pos_hint: {"center_y": .5}
+                    Label:
+                        text: ("EDITANDO  ·  " if app.pv_editing else "PASTA  ") + app.pv_folder_name
+                        bold: True
+                        font_size: "12sp"
+                        color: C.blue400 if app.pv_editing else C.pink300
+                        text_size: self.size
+                        halign: "left"
+                        valign: "middle"
+                        shorten: True
+                    Chip:
+                        text: "CANCELAR"
+                        font_size: "11sp"
+                        height: dp(26)
+                        pos_hint: {"center_y": .5}
+                        on_release: app.pv_cancel_edit()
+
+                SectionLabel:
+                    text: "CLIENTE  [color=#9333eab3][size=10sp](digite ou escolha na lista)[/size][/color]"
+                    markup: True
+                BoxLayout:
+                    size_hint_y: None
+                    height: dp(48)
+                    spacing: dp(8)
+                    NeonInput:
+                        id: client
+                        icon: I.account
+                        hint_text: "Ex: LUIZ BH"
+                        uppercase: True
+                        on_text: app.pv_client_changed(self.text)
+                        on_text_validate: date.focus = True
+                    Button:
+                        size_hint_x: None
+                        width: dp(84)
+                        markup: True
+                        text: "[font={}]{}[/font]\nLISTA".format(app.icon_font, I.bullets)
+                        halign: "center"
+                        bold: True
+                        font_size: "11sp"
+                        background_normal: ""
+                        background_color: (0.35, 0.11, 0.53, 0.55) if self.state == "normal" else (0.86, 0.15, 0.47, 0.6)
+                        color: C.pink200
+                        on_release: app.pv_open_client_list()
+                Label:
+                    text: app.pv_client_note
+                    font_size: "11sp"
+                    color: C.amber400
+                    size_hint_y: None
+                    height: (self.texture_size[1] + dp(8)) if app.pv_client_note else 0
+                    opacity: 1 if app.pv_client_note else 0
+                    text_size: self.width, None
+                    padding: dp(4), dp(4)
+                ChipStrip:
+                    height: dp(36) if app.pv_recent_clients else 0
+                    opacity: 1 if app.pv_recent_clients else 0
+                    viewclass: "ClientChip"
+                    data: [{"text": c, "width": app.chip_width(c), "height": dp(30), "active": c == client.text.strip().upper()} for c in app.pv_recent_clients]
+
+                BoxLayout:
+                    size_hint_y: None
+                    height: dp(30)
+                    spacing: dp(6)
+                    SectionLabel:
+                        text: "DATA DE DEVOLUÇÃO"
+                        pos_hint: {"center_y": .5}
+                    DateChip:
+                        text: "HOJE"
+                        on_release: app.pv_set_date(0)
+                    DateChip:
+                        text: "ONTEM"
+                        on_release: app.pv_set_date(1)
+                NeonInput:
+                    id: date
+                    icon: I.calendar
+                    hint_text: "DD/MM/AAAA"
+                    input_type: "datetime"
+
+            Card:
+                size_hint_y: None
+                height: self.minimum_height
+                CardHeader:
+                    icon: I.cart
+                    title: "CARRINHOS"
+                    badge: str(len(app.pv_form_carts)) if app.pv_form_carts else ""
+                BoxLayout:
+                    orientation: "vertical"
+                    size_hint_y: None
+                    height: self.minimum_height
+                    padding: dp(12), dp(10)
+                    spacing: dp(8)
+                    Label:
+                        text: "Bipe com a câmera ou digite o código de cada carrinho."
+                        font_size: "11sp"
+                        color: C.purple300
+                        size_hint_y: None
+                        height: dp(16)
+                        text_size: self.size
+                        halign: "left"
+                    RelativeLayout:
+                        size_hint_y: None
+                        height: dp(50)
+                        NeonInput:
+                            id: cart_code
+                            icon: I.barcode
+                            hint_text: "CÓDIGO DO CARRINHO..."
+                            uppercase: True
+                            font_name: "RobotoMono-Regular"
+                            foreground_color: C.pink300
+                            height: dp(50)
+                            padding: [dp(46), (self.height - self.line_height) / 2, dp(104), 0]
+                            pos: 0, 0
+                            on_text_validate: app.pv_add_cart()
+                        IconButton:
+                            icon: I.plus
+                            icon_color: C.green400
+                            hover_bg: (0.08, 0.33, 0.18, 0.3)
+                            pos: self.parent.width - self.width * 2 - dp(8), (self.parent.height - self.height) / 2
+                            on_release: app.pv_add_cart()
+                        IconButton:
+                            icon: I.camera
+                            icon_color: C.pink600
+                            hover_bg: (0.51, 0.09, 0.26, 0.3)
+                            pos: self.parent.width - self.width - dp(4), (self.parent.height - self.height) / 2
+                            on_release: app.pv_scan_carts()
+                    StackLayout:
+                        size_hint_y: None
+                        height: self.minimum_height
+                        spacing: dp(6)
+                        id: cart_chips
+                    GradientButton:
+                        icon: I.barcode
+                        text: "BIPAR CARRINHOS"
+                        texture: app.grad_alt
+                        height: dp(44)
+                        on_release: app.pv_scan_carts()
+
+            Card:
+                size_hint_y: None
+                height: self.minimum_height
+                CardHeader:
+                    icon: I.flower
+                    title: "MATERIAIS"
+                    badge: "TOTAL {}".format(app.pv_form_total)
+                GridLayout:
+                    id: items_grid
+                    cols: 2
+                    spacing: dp(8)
+                    padding: dp(12)
+                    size_hint_y: None
+                    height: self.minimum_height
+
+            Card:
+                size_hint_y: None
+                height: self.minimum_height
+                CardHeader:
+                    icon: I.camera
+                    title: "FOTOS"
+                    badge: str(len(app.pv_form_photos)) if app.pv_form_photos else ""
+                BoxLayout:
+                    size_hint_y: None
+                    height: dp(64)
+                    padding: dp(12), dp(10), dp(12), 0
+                    spacing: dp(8)
+                    ToolButton:
+                        icon: I.camera_plus
+                        text: "TIRAR FOTO"
+                        on_release: app.pv_take_photo()
+                    ToolButton:
+                        icon: I.image_plus
+                        text: "DA GALERIA"
+                        tint: C.blue400
+                        on_release: app.pv_pick_photos()
+                ScrollView:
+                    size_hint_y: None
+                    height: dp(74) if app.pv_form_photos else 0
+                    opacity: 1 if app.pv_form_photos else 0
+                    do_scroll_y: False
+                    bar_width: dp(3)
+                    BoxLayout:
+                        id: photo_strip
+                        size_hint_x: None
+                        width: self.minimum_width
+                        padding: dp(12), dp(8)
+                        spacing: dp(8)
+                Label:
+                    text: "Opcional: fotografe o material para documentar."
+                    font_size: "12sp"
+                    color: C.purple500
+                    size_hint_y: None
+                    height: 0 if app.pv_form_photos else dp(34)
+                    opacity: 0 if app.pv_form_photos else 1
+
+            GradientButton:
+                icon: I.save if app.pv_editing else I.plus
+                text: ("SALVAR ALTERAÇÕES" if app.pv_editing else "REGISTRAR NA PASTA") + ("  ({})".format(app.pv_form_total) if app.pv_form_total else "")
+                texture: app.grad_alt if app.pv_editing else app.grad_main
+                on_release: app.pv_submit()
+
+# ---------------------------------------------------------------- resumo
+<PvSummaryScreen>:
+    ScrollView:
+        do_scroll_x: False
+        bar_width: dp(4)
+        BoxLayout:
+            orientation: "vertical"
+            size_hint_y: None
+            height: self.minimum_height
+            padding: dp(16), dp(12), dp(16), dp(16)
+            spacing: dp(12)
+            ChipStrip:
+                viewclass: "PvSumFilterChip"
+                data: [{"text": label, "width": app.chip_width(label), "height": dp(30), "value": value, "active": value == app.pv_sum_filter} for label, value in app.pv_filters]
+            GridLayout:
+                cols: 3
+                spacing: dp(10)
+                size_hint_y: None
+                height: self.minimum_height
+                row_default_height: dp(84)
+                row_force_default: True
+                StatTile:
+                    icon: I.folder
+                    value: str(app.pv_sum_folders)
+                    label: "PASTAS"
+                StatTile:
+                    icon: I.flower
+                    value: str(app.pv_sum_total)
+                    label: "ITENS"
+                    color: C.green400
+                StatTile:
+                    icon: I.account
+                    value: str(app.pv_sum_clients)
+                    label: "CLIENTES"
+                    color: C.blue400
+            Card:
+                size_hint_y: None
+                height: self.minimum_height
+                CardHeader:
+                    icon: I.flower
+                    title: "POR MATERIAL"
+                BoxLayout:
+                    id: item_bars
+                    orientation: "vertical"
+                    size_hint_y: None
+                    height: self.minimum_height
+                    padding: dp(14), dp(8)
+                    spacing: dp(2)
+                Label:
+                    text: "Nenhum material neste filtro."
+                    font_size: "13sp"
+                    color: C.purple700
+                    size_hint_y: None
+                    height: dp(48) if not app.pv_sum_total else 0
+                    opacity: 1 if not app.pv_sum_total else 0
+            Card:
+                size_hint_y: None
+                height: self.minimum_height
+                CardHeader:
+                    icon: I.account
+                    title: "POR CLIENTE"
+                    badge: str(app.pv_sum_clients)
+                BoxLayout:
+                    id: client_bars
+                    orientation: "vertical"
+                    size_hint_y: None
+                    height: self.minimum_height
+                    padding: dp(14), dp(8)
+                    spacing: dp(2)
+            GradientButton:
+                icon: I.printer
+                text: "IMPRIMIR RELATÓRIO (PDF)"
+                texture: app.grad_main
+                disabled: not app.pv_sum_folders
+                on_release: app.pv_print("summary")
+            GradientButton:
+                icon: I.share
+                text: "COMPARTILHAR"
+                texture: app.grad_alt
+                disabled: not app.pv_sum_folders
+                on_release: app.pv_share("summary")
+
+# ---------------------------------------------------------------- janelas
+<FolderModal>:
+    background: ""
+    background_color: C.overlay
+    overlay_color: (0, 0, 0, 0)
+    size_hint: 1, 1
+    AnchorLayout:
+        ModalCard:
+            BoxLayout:
+                size_hint_y: None
+                height: dp(44)
+                ModalTitle:
+                    icon: root.icon
+                    text: root.title
+                CloseButton:
+                    on_release: root.dismiss()
+            BoxLayout:
+                size_hint_y: None
+                height: dp(34)
+                spacing: dp(6)
+                Chip:
+                    text: "SEMANA PASSADA"
+                    font_size: "11sp"
+                    pos_hint: {"center_y": .5}
+                    on_release: root.set_week(-1)
+                Chip:
+                    text: "ESTA SEMANA"
+                    font_size: "11sp"
+                    pos_hint: {"center_y": .5}
+                    on_release: root.set_week(0)
+                Chip:
+                    text: "PRÓXIMA"
+                    font_size: "11sp"
+                    pos_hint: {"center_y": .5}
+                    on_release: root.set_week(1)
+            BoxLayout:
+                size_hint_y: None
+                height: dp(70)
+                spacing: dp(8)
+                BoxLayout:
+                    orientation: "vertical"
+                    SectionLabel:
+                        text: "INÍCIO"
+                    NeonInput:
+                        id: start
+                        icon: I.calendar
+                        hint_text: "DD/MM/AAAA"
+                        font_size: "14sp"
+                        input_type: "datetime"
+                        on_text_validate: end.focus = True
+                BoxLayout:
+                    orientation: "vertical"
+                    SectionLabel:
+                        text: "FIM"
+                    NeonInput:
+                        id: end
+                        icon: I.calendar
+                        hint_text: "DD/MM/AAAA"
+                        font_size: "14sp"
+                        input_type: "datetime"
+                        on_text_validate: name.focus = True
+            SectionLabel:
+                text: "NOME DA PASTA  [color=#9333eab3][size=10sp](Opcional)[/size][/color]"
+                markup: True
+            NeonInput:
+                id: name
+                icon: I.folder
+                uppercase: True
+                hint_text: root.name_hint(start.text, end.text)
+                on_text_validate: root.submit()
+            Label:
+                text: root.error
+                color: C.red500
+                font_size: "12sp"
+                size_hint_y: None
+                height: (self.texture_size[1] + dp(6)) if root.error else 0
+                text_size: self.width, None
+            Widget:
+                size_hint_y: None
+                height: dp(6)
+            GradientButton:
+                icon: root.icon
+                text: root.confirm_text
+                texture: app.grad_main
+                on_release: root.submit()
+
+<ChoiceModal>:
+    background: ""
+    background_color: C.overlay
+    overlay_color: (0, 0, 0, 0)
+    size_hint: 1, 1
+    AnchorLayout:
+        ModalCard:
+            BoxLayout:
+                size_hint_y: None
+                height: dp(44)
+                ModalTitle:
+                    icon: root.icon
+                    text: root.title
+                CloseButton:
+                    on_release: root.dismiss()
+            Label:
+                text: root.subtitle
+                font_size: "12sp"
+                color: C.purple300
+                size_hint_y: None
+                height: dp(20)
+                text_size: self.size
+                halign: "left"
+                shorten: True
+            BoxLayout:
+                id: choices
+                orientation: "vertical"
+                size_hint_y: None
+                height: self.minimum_height
+
+# ================================================================ fotos
+<ShutterButton@ButtonBehavior+Widget>:
+    always_release: False
+
+<CamButton@Button>:
+    markup: True
+    font_name: "RobotoMono-Regular"
+    font_size: "13sp"
+    background_normal: ""
+    background_color: (0.35, 0.11, 0.53, 0.4)
+    color: C.pink300
+
+<PhotoModal>:
+    background: ""
+    background_color: (0, 0, 0, 1)
+    overlay_color: (0, 0, 0, 0)
+    size_hint: 1, 1
+    auto_dismiss: True
+    BoxLayout:
+        orientation: "vertical"
+        padding: dp(12), dp(12), dp(12), dp(16)
+        spacing: dp(12)
+        BoxLayout:
+            size_hint_y: None
+            height: dp(44)
+            ModalTitle:
+                icon: I.camera
+                text: "FOTO" + ("  ·  " + root.client if root.client else "")
+            CloseButton:
+                on_release: root.dismiss()
+        RelativeLayout:
+            canvas.before:
+                Color:
+                    rgba: (0.03, 0.03, 0.05, 1)
+                RoundedRectangle:
+                    pos: 0, 0
+                    size: self.size
+                    radius: [dp(16)]
+            StencilView:
+                id: preview_box
+                pos: 0, 0
+                size: self.parent.size
+                on_size: root._layout_camera()
+                on_pos: root._layout_camera()
+            Label:
+                text: root.status
+                font_name: "RobotoMono-Regular"
+                font_size: "13sp"
+                color: (0.66, 0.33, 0.97, 0.7)
+            Widget:
+                id: flash
+                opacity: 0
+                canvas:
+                    Color:
+                        rgba: 1, 1, 1, 1
+                    Rectangle:
+                        pos: 0, 0
+                        size: self.parent.size if self.parent else (0, 0)
+        Label:
+            text: ("{} foto(s) nesta sessão".format(root.count)) if root.count else "Enquadre o material e toque em FOTOGRAFAR"
+            font_size: "12sp"
+            color: C.green400 if root.count else C.purple300
+            size_hint_y: None
+            height: dp(20)
+        BoxLayout:
+            size_hint_y: None
+            height: dp(84)
+            spacing: dp(12)
+            CamButton:
+                text: "[font={}]{}[/font]\nFLASH".format(app.icon_font, I.flash if root.torch_on else I.flash_off)
+                halign: "center"
+                background_color: (0.86, 0.15, 0.47, 0.4) if root.torch_on else (0.35, 0.11, 0.53, 0.4)
+                on_release: root.toggle_torch()
+            # Botão de disparo
+            ShutterButton:
+                size_hint_x: None
+                width: dp(84)
+                disabled: root.camera is None
+                on_release: root.capture()
+                canvas:
+                    Color:
+                        rgba: C.white if not self.disabled else (0.4, 0.4, 0.4, 1)
+                    Line:
+                        circle: (self.center_x, self.center_y, dp(38))
+                        width: dp(3)
+                    Color:
+                        rgba: (C.pink500 if self.state == "down" else C.white) if not self.disabled else (0.4, 0.4, 0.4, 1)
+                    Ellipse:
+                        pos: self.center_x - dp(31), self.center_y - dp(31)
+                        size: dp(62), dp(62)
+            CamButton:
+                text: "[font={}]{}[/font]\nLENTE".format(app.icon_font, I.switch)
+                halign: "center"
+                disabled: root.camera_total < 2
+                opacity: 1 if root.camera_total > 1 else 0.3
+                on_release: root.switch_camera()
+        GradientButton:
+            icon: I.ok
+            text: "CONCLUIR" + ("  ({})".format(root.count) if root.count else "")
+            texture: app.grad_main
+            on_release: root.dismiss()
+
+<PhotoViewer>:
+    background: ""
+    background_color: (0, 0, 0, 0.97)
+    overlay_color: (0, 0, 0, 0)
+    size_hint: 1, 1
+    BoxLayout:
+        orientation: "vertical"
+        padding: dp(12), dp(12), dp(12), dp(16)
+        spacing: dp(10)
+        BoxLayout:
+            size_hint_y: None
+            height: dp(44)
+            ModalTitle:
+                icon: I.images
+                text: root.title
+            Label:
+                text: "{}/{}".format(root.index + 1, len(root.names)) if root.names else ""
+                font_name: "RobotoMono-Regular"
+                font_size: "13sp"
+                color: C.pink300
+                size_hint_x: None
+                width: dp(56)
+            CloseButton:
+                on_release: root.dismiss()
+        RelativeLayout:
+            Image:
+                id: image
+                nocache: True
+                fit_mode: "contain"
+            IconButton:
+                icon: I.chevron_left
+                icon_color: C.white
+                font_size: "34sp"
+                size: dp(52), dp(52)
+                pos: 0, self.parent.height / 2 - dp(26)
+                opacity: 1 if len(root.names) > 1 else 0
+                disabled: len(root.names) < 2
+                on_release: root.step(-1)
+            IconButton:
+                icon: I.chevron_right
+                icon_color: C.white
+                font_size: "34sp"
+                size: dp(52), dp(52)
+                pos: self.parent.width - dp(52), self.parent.height / 2 - dp(26)
+                opacity: 1 if len(root.names) > 1 else 0
+                disabled: len(root.names) < 2
+                on_release: root.step(1)
+        BoxLayout:
+            size_hint_y: None
+            height: dp(58)
+            spacing: dp(8)
+            ToolButton:
+                icon: I.rotate
+                text: "GIRAR"
+                on_release: root.rotate()
+            ToolButton:
+                icon: I.trash2
+                text: "EXCLUIR FOTO"
+                tint: C.red500
+                on_release: app.confirm("EXCLUIR FOTO", "Excluir esta foto?", root.delete, "EXCLUIR")
+            ToolButton:
+                icon: I.ok
+                text: "FECHAR"
+                tint: C.green400
+                on_release: root.dismiss()
+
+# ================================================================ lista de clientes
+<ClientPickRow>:
+    padding: dp(14), dp(6), dp(4), dp(6)
+    spacing: dp(8)
+    on_release: app._pick_from_row(self)
+    canvas.before:
+        Color:
+            rgba: (0.35, 0.11, 0.53, 0.25) if self.state == "down" else (0, 0, 0, 0)
+        Rectangle:
+            pos: self.pos
+            size: self.size
+    canvas.after:
+        Color:
+            rgba: (0.35, 0.11, 0.53, 0.3)
+        Line:
+            points: self.x, self.y, self.right, self.y
+    IconLabel:
+        icon: I.account
+        color: C.pink400
+        pos_hint: {"center_y": .5}
+    BoxLayout:
+        orientation: "vertical"
+        Label:
+            text: root.name
+            bold: True
+            font_size: "15sp"
+            color: C.pink100
+            text_size: self.size
+            halign: "left"
+            valign: "bottom"
+            shorten: True
+        Label:
+            text: root.detail
+            font_size: "11sp"
+            color: C.purple400
+            text_size: self.size
+            halign: "left"
+            valign: "top"
+    IconButton:
+        icon: I.trash2
+        icon_color: C.purple700
+        hover_bg: (0.5, 0.11, 0.11, 0.3)
+        pos_hint: {"center_y": .5}
+        on_release: app._remove_from_row(root)
+
+<ClientPickerModal>:
+    background: ""
+    background_color: C.overlay
+    overlay_color: (0, 0, 0, 0)
+    size_hint: 1, 1
+    AnchorLayout:
+        BoxLayout:
+            orientation: "vertical"
+            size_hint: None, None
+            width: min(Window.width - dp(32), dp(420))
+            height: Window.height * 0.82
+            padding: dp(14)
+            spacing: dp(8)
+            canvas.before:
+                Color:
+                    rgba: C.card
+                RoundedRectangle:
+                    pos: self.pos
+                    size: self.size
+                    radius: [dp(16)]
+                Color:
+                    rgba: (0.93, 0.28, 0.6, 0.5)
+                Line:
+                    rounded_rectangle: (self.x, self.y, self.width, self.height, dp(16))
+            BoxLayout:
+                size_hint_y: None
+                height: dp(44)
+                ModalTitle:
+                    icon: I.account
+                    text: "CLIENTES ({})".format(root.total)
+                CloseButton:
+                    on_release: root.dismiss()
+            NeonInput:
+                id: search
+                icon: I.search
+                hint_text: "Buscar ou digitar novo cliente..."
+                uppercase: True
+                on_text: root.query = self.text
+                on_text_validate: root.add_new() if root.can_add else (root.pick(root.ids.rv.data[0]["name"]) if root.ids.rv.data else None)
+            GradientButton:
+                icon: I.plus
+                text: "CADASTRAR \"{}\"".format(search.text.strip().upper()) if root.can_add else ""
+                texture: app.grad_main
+                height: dp(46) if root.can_add else 0
+                opacity: 1 if root.can_add else 0
+                disabled: not root.can_add
+                on_release: root.add_new()
+            FloatLayout:
+                RecycleView:
+                    id: rv
+                    viewclass: "ClientPickRow"
+                    pos: self.parent.pos
+                    size: self.parent.size
+                    bar_width: dp(4)
+                    bar_color: C.purple900
+                    RecycleBoxLayout:
+                        orientation: "vertical"
+                        default_size_hint: 1, None
+                        default_size: None, dp(56)
+                        size_hint_y: None
+                        height: self.minimum_height
+                EmptyState:
+                    pos: self.parent.pos
+                    size: self.parent.size
+                    opacity: 1 if not rv.data else 0
+                    icon: I.account
+                    text: "NENHUM CLIENTE NA LISTA\nDigite o nome acima para cadastrar." if not root.query else "NENHUM CLIENTE ENCONTRADO"

@@ -1,4 +1,4 @@
-"""Ponto de entrada do Neon Cart.
+"""Ponto de entrada do Material Circulante (antigo Neon Cart).
 
 Se o app falhar ao abrir, mostra o erro na tela (em vez de fechar sem
 explicação) e grava o relatório em neoncart_crash.txt na pasta do app.
@@ -50,12 +50,12 @@ def _show_crash(report):
     from kivy.uix.scrollview import ScrollView
 
     class CrashApp(App):
-        title = "Neon Cart - erro"
+        title = "Material Circulante - erro"
 
         def build(self):
             root = BoxLayout(orientation="vertical", padding=12, spacing=8)
             root.add_widget(Label(
-                text="O Neon Cart falhou ao abrir.\nTire um print desta tela e envie ao suporte.",
+                text="O Material Circulante falhou ao abrir.\nTire um print desta tela e envie ao suporte.",
                 size_hint_y=None, height=90, color=(1, 0.5, 0.7, 1), halign="center"))
             scroll = ScrollView()
             label = Label(text=report, size_hint_y=None, font_size="11sp",

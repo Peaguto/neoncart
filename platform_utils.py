@@ -11,6 +11,7 @@ IS_ANDROID = platform == "android"
 
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 JSON_MIME = "application/json"
+PDF_MIME = "application/pdf"
 PICK_REQUEST_CODE = 0x4E43  # "NC"
 
 if IS_ANDROID:
@@ -94,6 +95,37 @@ def share_file(uri, mime, title="Relatório de Carrinhos"):
     intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     _start_chooser(intent, title)
     return True
+
+
+@run_on_ui_thread
+def _start_view(intent, title):
+    try:
+        _activity().startActivity(intent)
+    except Exception:  # noqa: BLE001 - sem app padrão: deixa o usuário escolher
+        _activity().startActivity(Intent.createChooser(intent, _char_seq(title)))
+
+
+def open_file(where, uri, mime=PDF_MIME, title="Abrir com"):
+    """Abre o arquivo salvo (ex.: PDF no leitor, que tem a opção Imprimir).
+
+    No Android usa o content:// do MediaStore; no desktop, o caminho do arquivo.
+    Retorna False se não for possível abrir.
+    """
+    if IS_ANDROID:
+        if uri is None:
+            return False
+        intent = Intent(Intent.ACTION_VIEW)
+        intent.setDataAndType(uri, mime)
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        _start_view(intent, title)
+        return True
+    if where and os.path.exists(where):
+        if hasattr(os, "startfile"):
+            os.startfile(where)  # noqa: S606 - Windows
+        else:
+            webbrowser.open("file://" + os.path.abspath(where))
+        return True
+    return False
 
 
 # --- salvar em Downloads -----------------------------------------------
@@ -270,6 +302,133 @@ def pick_text_file(callback, mime="*/*"):
     intent.addCategory(Intent.CATEGORY_OPENABLE)
     intent.setType(mime)
     _activity().startActivityForResult(intent, PICK_REQUEST_CODE)
+
+
+IMAGE_REQUEST_CODE = 0x4E44
+
+
+def pick_images(callback):
+    """Seletor de fotos (várias). Chama callback([bytes, ...]) — lista vazia se cancelar.
+
+    No desktop abre o seletor de arquivos do sistema (tkinter).
+    """
+    if not IS_ANDROID:
+        try:
+            import tkinter
+            from tkinter import filedialog
+
+            root = tkinter.Tk()
+            root.withdraw()
+            paths = filedialog.askopenfilenames(
+                title="Escolha as fotos",
+                filetypes=[("Imagens", "*.jpg *.jpeg *.png *.webp *.bmp")])
+            root.destroy()
+        except Exception as exc:  # noqa: BLE001
+            print("NeonCart: seletor indisponível:", exc)
+            paths = []
+        out = []
+        for p in paths:
+            with open(p, "rb") as fh:
+                out.append(fh.read())
+        callback(out)
+        return
+
+    from android import activity
+
+    def _on_result(request_code, result_code, data):
+        if request_code != IMAGE_REQUEST_CODE:
+            return
+        activity.unbind(on_activity_result=_on_result)
+        if result_code != -1 or data is None:  # -1 = RESULT_OK
+            callback([])
+            return
+        uris = []
+        clip = data.getClipData()
+        if clip is not None:
+            for i in range(clip.getItemCount()):
+                uris.append(clip.getItemAt(i).getUri())
+        elif data.getData() is not None:
+            uris.append(data.getData())
+        out = []
+        for uri in uris:
+            try:
+                out.append(_read_uri_bytes(uri))
+            except Exception as exc:  # noqa: BLE001
+                print("NeonCart: erro ao ler foto:", exc)
+        callback(out)
+
+    activity.bind(on_activity_result=_on_result)
+    intent = Intent(Intent.ACTION_GET_CONTENT)
+    intent.addCategory(Intent.CATEGORY_OPENABLE)
+    intent.setType("image/*")
+    intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, True)
+    _activity().startActivityForResult(
+        Intent.createChooser(intent, _char_seq("Escolha as fotos")), IMAGE_REQUEST_CODE)
+
+
+def _read_uri_bytes(uri):
+    """Lê o conteúdo de um content:// direto pelo descritor de arquivo (rápido)."""
+    pfd = _activity().getContentResolver().openFileDescriptor(uri, "r")
+    fd = pfd.detachFd()
+    with os.fdopen(fd, "rb") as fh:
+        return fh.read()
+
+
+_gallery_cache = {}
+
+
+def publish_image(src_path, filename):
+    """Copia a foto para Imagens/MaterialCirculante e retorna o content:// (ou None).
+
+    Necessário para enviar a foto a outro app (WhatsApp). Reaproveita a cópia
+    já feita nesta sessão.
+    """
+    if not IS_ANDROID or BuildVersion.SDK_INT < 29:
+        return None
+    if src_path in _gallery_cache:
+        return _gallery_cache[src_path]
+    ContentValues = autoclass("android.content.ContentValues")
+    Media = autoclass("android.provider.MediaStore$Images$Media")
+    MediaColumns = autoclass("android.provider.MediaStore$MediaColumns")
+    values = ContentValues()
+    values.put(MediaColumns.DISPLAY_NAME, JString(filename))
+    values.put(MediaColumns.MIME_TYPE, JString("image/jpeg"))
+    values.put(MediaColumns.RELATIVE_PATH,
+               JString(Environment.DIRECTORY_PICTURES + "/MaterialCirculante"))
+    resolver = _activity().getContentResolver()
+    uri = resolver.insert(Media.EXTERNAL_CONTENT_URI, values)
+    if uri is None:
+        return None
+    out = resolver.openOutputStream(uri)
+    try:
+        with open(src_path, "rb") as fh:
+            out.write(fh.read())
+        out.flush()
+    finally:
+        out.close()
+    _gallery_cache[src_path] = uri
+    return uri
+
+
+def share_images(paths, text, title="Compartilhar"):
+    """Envia texto + fotos juntos. Retorna False se não der (ex.: desktop)."""
+    if not IS_ANDROID:
+        return False
+    uris = [u for u in (publish_image(p, os.path.basename(p)) for p in paths) if u is not None]
+    if not uris:
+        return False
+    ArrayList = autoclass("java.util.ArrayList")
+    items = ArrayList()
+    for uri in uris:
+        items.add(cast("android.os.Parcelable", uri))
+    intent = Intent()
+    intent.setAction(Intent.ACTION_SEND_MULTIPLE)
+    intent.setType("image/jpeg")
+    intent.putParcelableArrayListExtra(Intent.EXTRA_STREAM, items)
+    intent.putExtra(Intent.EXTRA_TEXT, _char_seq(text))
+    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    _start_chooser(intent, title)
+    return True
 
 
 def _read_uri_text(uri):
